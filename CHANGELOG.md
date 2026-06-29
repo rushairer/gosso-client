@@ -8,5 +8,5 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [0.1.0] - 2026-06-29
 ### Added
-- Initial browser SDK for Gosso ordinary SPA clients.
+- Initial `@gosso/client` browser SDK for Gosso ordinary SPA clients.
 - Add PKCE redirects, callback handling, token refresh, authenticated `apiFetch`, password login, MFA verification, passkey login and registration, profile management, email changes, MFA settings, passkey management, and session management.

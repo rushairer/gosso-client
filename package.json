@@ -1,5 +1,5 @@
 {
-  "name": "gosso-client",
+  "name": "@gosso/client",
   "version": "0.1.0",
   "description": "Browser SDK for Gosso OAuth/OIDC SPA clients.",
   "type": "module",

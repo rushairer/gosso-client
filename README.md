@@ -1,8 +1,8 @@
-# gosso-client
+# @gosso/client
 
 Browser SDK for Gosso OAuth/OIDC single-page application clients.
 
-`gosso-client` provides the protocol and account self-service layer for ordinary Gosso clients:
+`@gosso/client` provides the protocol and account self-service layer for ordinary Gosso clients:
 
 - Authorization Code + PKCE redirects and callback handling
 - token storage, userinfo loading, logout, and automatic refresh
@@ -15,13 +15,13 @@ The package intentionally does not ship React UI. Build app-specific pages with 
 ## Install
 
 ```bash
-npm install gosso-client
+npm install @gosso/client
 ```
 
 ## Quick Start
 
 ```ts
-import { createGossoClient } from 'gosso-client';
+import { createGossoClient } from '@gosso/client';
 
 export const gossoClient = createGossoClient({
   issuer: window.location.origin,
