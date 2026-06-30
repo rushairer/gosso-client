@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGossoClient } from './index';
+import { createGossoClient, generateRandomString } from './index';
 
 function createLocalStorageMock(): Storage {
   let values = new Map<string, string>();
@@ -159,5 +159,41 @@ describe('@gosso/client', () => {
         body: JSON.stringify({ display_name: 'New Name' }),
       })
     );
+  });
+
+  it('generates secure random strings of specified length', () => {
+    const str1 = generateRandomString(32);
+    const str2 = generateRandomString(32);
+
+    expect(str1).toHaveLength(32);
+    expect(str2).toHaveLength(32);
+    expect(str1).not.toBe(str2);
+    expect(str1).toMatch(/^[A-Za-z0-9\-._~]+$/);
+  });
+
+  it('uses __Secure- prefix for access token cookie on HTTPS', async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, protocol: 'https:' },
+      configurable: true,
+    });
+
+    const accessToken = tokenWithClaims({ scope: 'openid profile email' });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ access_token: accessToken, refresh_token: 'refresh', expires_in: 900 }))
+      .mockResolvedValueOnce(jsonResponse({ sub: 'user-1', preferred_username: 'aben' }));
+    const client = createClient(fetchMock);
+    localStorage.setItem('test:auth_state', 'state-1');
+    localStorage.setItem('test:pkce_verifier', 'verifier-1');
+
+    await client.handleRedirectCallback('code-1', 'state-1');
+
+    expect(document.cookie).toContain('__Secure-access_token=');
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+    });
   });
 });

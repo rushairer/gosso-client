@@ -100,11 +100,21 @@ function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
-function generateRandomString(length: number): string {
+export function generateRandomString(length: number): string {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
   let text = '';
-  for (let i = 0; i < length; i += 1) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  const cryptoObj = (typeof window !== 'undefined' ? window.crypto : null) || (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+  if (cryptoObj && cryptoObj.getRandomValues) {
+    const array = new Uint8Array(length);
+    cryptoObj.getRandomValues(array);
+    for (let i = 0; i < length; i += 1) {
+      text += possible.charAt(array[i] % possible.length);
+    }
+  } else {
+    // Fallback for environments lacking CSPRNG
+    for (let i = 0; i < length; i += 1) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
   }
   return text;
 }
@@ -116,7 +126,11 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
 }
 
 function cookieSecureAttribute(): string {
-  return location.protocol === 'https:' ? '; Secure' : '';
+  return typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+}
+
+function getCookieName(baseName: string): string {
+  return typeof location !== 'undefined' && location.protocol === 'https:' ? `__Secure-${baseName}` : baseName;
 }
 
 function readClaimsFromAccessToken(accessToken: string): Record<string, unknown> | null {
@@ -217,11 +231,13 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   let refreshPromise: Promise<string> | null = null;
 
   const setCookie = (name: string, value: string, maxAgeSeconds: number) => {
-    document.cookie = `${name}=${value}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax${cookieSecureAttribute()}`;
+    const cookieName = getCookieName(name);
+    document.cookie = `${cookieName}=${value}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax${cookieSecureAttribute()}`;
   };
 
   const deleteCookie = (name: string) => {
-    document.cookie = `${name}=; path=/; max-age=-1; SameSite=Lax`;
+    const cookieName = getCookieName(name);
+    document.cookie = `${cookieName}=; path=/; max-age=-1; SameSite=Lax`;
   };
 
   const readProfile = (): UserProfile | null => {
