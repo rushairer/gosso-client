@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-12
+### Added
+- Add opt-in `sessionMode: "cookie"` for HttpOnly Cookie-backed SPA sessions. It keeps access and refresh tokens out of JavaScript-accessible storage while preserving PKCE, MFA, passkeys and account-management APIs.
+- Add `sessionProfileEndpoint` for same-origin applications to obtain minimal UI authorization claims without decoding a bearer token.
+
 ## [0.1.0] - 2026-06-29
 ### Added
 - Initial `@gosso/client` browser SDK for Gosso ordinary SPA clients.

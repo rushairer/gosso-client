@@ -6,6 +6,12 @@ export interface GossoClientConfig {
   postLoginDefaultPath: string;
   loginPath: string;
   storagePrefix: string;
+  /** Use HttpOnly Gosso cookies instead of exposing tokens to JavaScript. */
+  sessionMode?: 'token' | 'cookie';
+  /** Same-origin endpoint returning {data:{sub,roles,scope}} for UI authorization. */
+  sessionProfileEndpoint?: string;
+  /** CSRF cookie used by same-origin application API requests in cookie session mode. */
+  csrfCookieName?: string;
   fetchImpl?: typeof fetch;
   onAuthRequired?: () => void;
   onSessionChanged?: (snapshot: SessionSnapshot) => void;
@@ -133,6 +139,14 @@ function getCookieName(baseName: string): string {
   return typeof location !== 'undefined' && location.protocol === 'https:' ? `__Secure-${baseName}` : baseName;
 }
 
+function readCSRFToken(preferredName?: string): string | null {
+	for (const raw of document.cookie.split(';')) {
+		const [name, ...value] = raw.trim().split('=');
+		if (name === preferredName || name === '__Host-csrf_token' || name === 'csrf_token' || name === 'blog_csrf_token') return decodeURIComponent(value.join('='));
+	}
+	return null;
+}
+
 function readClaimsFromAccessToken(accessToken: string): Record<string, unknown> | null {
   try {
     const payloadBase64 = accessToken.split('.')[1];
@@ -214,6 +228,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     ...inputConfig,
     issuer: normalizeBaseUrl(inputConfig.issuer),
   };
+  const cookieSession = config.sessionMode === 'cookie';
+  const flowStorage = cookieSession ? sessionStorage : localStorage;
   const fetcher = config.fetchImpl || fetch.bind(window);
   const key = (name: string) => `${config.storagePrefix}:${name}`;
   const storageKeys = {
@@ -241,7 +257,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   const readProfile = (): UserProfile | null => {
-    const profile = localStorage.getItem(storageKeys.userProfile);
+    const storage = cookieSession ? sessionStorage : localStorage;
+    const profile = storage.getItem(storageKeys.userProfile);
     if (!profile) return null;
     try {
       return JSON.parse(profile) as UserProfile;
@@ -250,8 +267,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     }
   };
 
-  const getAccessToken = (): string | null => localStorage.getItem(storageKeys.accessToken);
-  const getRefreshToken = (): string | null => localStorage.getItem(storageKeys.refreshToken);
+  const getAccessToken = (): string | null => cookieSession ? null : localStorage.getItem(storageKeys.accessToken);
+  const getRefreshToken = (): string | null => cookieSession ? null : localStorage.getItem(storageKeys.refreshToken);
 
   const getSnapshot = (): SessionSnapshot => {
     const accessToken = getAccessToken();
@@ -261,7 +278,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       accessToken,
       refreshToken,
       profile,
-      loggedIn: Boolean(accessToken),
+      loggedIn: cookieSession ? Boolean(profile) : Boolean(accessToken),
       isAdmin: hasAdminAccess(profile, accessToken),
     };
   };
@@ -271,6 +288,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   const saveTokenSet = (data: TokenResponse | { access_token: string; refresh_token?: string; expires_in?: number }) => {
+    if (cookieSession) { emitSessionChanged(); return; }
     localStorage.setItem(storageKeys.accessToken, data.access_token);
     if (data.refresh_token) {
       localStorage.setItem(storageKeys.refreshToken, data.refresh_token);
@@ -283,6 +301,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
 
   const clear = () => {
     Object.values(storageKeys).forEach((storageKey) => localStorage.removeItem(storageKey));
+    Object.values(storageKeys).forEach((storageKey) => sessionStorage.removeItem(storageKey));
     deleteCookie('access_token');
     emitSessionChanged();
   };
@@ -398,6 +417,18 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   const fetchUserProfile = async (accessToken = getAccessToken()): Promise<UserProfile> => {
+    if (cookieSession) {
+      const [identity, session] = await Promise.all([
+        fetcher(`${config.issuer}/oidc/userinfo`, { credentials: 'same-origin' }),
+        config.sessionProfileEndpoint ? fetcher(config.sessionProfileEndpoint, { credentials: 'same-origin' }) : Promise.resolve(null),
+      ]);
+      if (!identity.ok || (session && !session.ok)) throw new Error('Failed to fetch user profile');
+      const data = await identity.json() as UserProfile;
+      if (session) Object.assign(data, (await session.json() as ApiEnvelope<Partial<UserProfile>>).data || {});
+      sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
+      emitSessionChanged();
+      return data;
+    }
     if (!accessToken) throw new Error('No access token found');
     const response = await fetcher(`${config.issuer}/oidc/userinfo`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -414,6 +445,26 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   const apiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
+    if (cookieSession) {
+      const headers = new Headers(options.headers || {});
+      const issuerRequest = url.startsWith(`${config.issuer}/`);
+      if (!['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase()) && !headers.has('X-CSRF-Token')) {
+        const csrf = readCSRFToken(issuerRequest ? undefined : config.csrfCookieName);
+        if (csrf) headers.set('X-CSRF-Token', csrf);
+      }
+      let response = await fetcher(url, { ...options, headers, credentials: 'same-origin' });
+      if (response.status === 401 && !issuerRequest) {
+        const csrf = readCSRFToken();
+        const refreshResponse = await fetcher(`${config.issuer}/api/v1/auth/refresh`, {
+          method: 'POST',
+          headers: csrf ? { 'X-CSRF-Token': csrf, 'X-Gosso-Cookie-Session': '1' } : { 'X-Gosso-Cookie-Session': '1' },
+          credentials: 'same-origin',
+        });
+        if (refreshResponse.ok) response = await fetcher(url, { ...options, headers, credentials: 'same-origin' });
+      }
+      if (response.status === 401) clear();
+      return response;
+    }
     let token = getAccessToken();
     if (!token) {
       redirectToLogin();
@@ -451,10 +502,10 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const redirectToAuthorize = async (customRedirectUri?: string) => {
     const verifier = generateRandomString(64);
     const state = generateRandomString(16);
-    localStorage.setItem(storageKeys.pkceVerifier, verifier);
-    localStorage.setItem(storageKeys.authState, state);
+    flowStorage.setItem(storageKeys.pkceVerifier, verifier);
+    flowStorage.setItem(storageKeys.authState, state);
     if (customRedirectUri) {
-      localStorage.setItem(storageKeys.postLoginRedirect, customRedirectUri);
+      flowStorage.setItem(storageKeys.postLoginRedirect, customRedirectUri);
     }
     const challenge = await generateCodeChallenge(verifier);
     const authUrl = new URL(`${config.issuer}/oauth2/authorize`);
@@ -469,8 +520,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   const exchangeCodeForToken = async (code: string, state: string): Promise<TokenResponse> => {
-    const savedState = localStorage.getItem(storageKeys.authState);
-    const verifier = localStorage.getItem(storageKeys.pkceVerifier);
+    const savedState = flowStorage.getItem(storageKeys.authState);
+    const verifier = flowStorage.getItem(storageKeys.pkceVerifier);
     if (state !== savedState) throw new Error('State mismatch. Potential CSRF attack.');
     if (!verifier) throw new Error('PKCE verifier not found. Authentication flow expired.');
     const body = new URLSearchParams();
@@ -481,28 +532,35 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     body.append('redirect_uri', config.redirectUri);
     const response = await fetcher(`${config.issuer}/oauth2/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(cookieSession ? { 'X-Gosso-Cookie-Session': '1' } : {}) },
       body: body.toString(),
+      credentials: 'same-origin',
     });
     if (!response.ok) {
       throw new Error(`Token exchange failed: ${await response.text()}`);
     }
     const data = (await response.json()) as TokenResponse;
-    saveTokenSet(data);
-    localStorage.removeItem(storageKeys.pkceVerifier);
-    localStorage.removeItem(storageKeys.authState);
+    if (!cookieSession) saveTokenSet(data);
+    flowStorage.removeItem(storageKeys.pkceVerifier);
+    flowStorage.removeItem(storageKeys.authState);
     return data;
   };
 
   const handleRedirectCallback = async (code: string, state: string): Promise<{ tokenSet: TokenResponse; redirectTo: string }> => {
     const tokenSet = await exchangeCodeForToken(code, state);
-    await fetchUserProfile(tokenSet.access_token);
-    const redirectTo = localStorage.getItem(storageKeys.postLoginRedirect) || config.postLoginDefaultPath;
-    localStorage.removeItem(storageKeys.postLoginRedirect);
+    await fetchUserProfile(cookieSession ? undefined : tokenSet.access_token);
+    const redirectTo = flowStorage.getItem(storageKeys.postLoginRedirect) || config.postLoginDefaultPath;
+    flowStorage.removeItem(storageKeys.postLoginRedirect);
     return { tokenSet, redirectTo };
   };
 
   const logout = async (redirectTo = '/') => {
+    if (cookieSession) {
+      const csrf = readCSRFToken();
+      try { await fetcher(`${config.issuer}/api/v1/auth/logout`, { method: 'POST', headers: csrf ? { 'X-CSRF-Token': csrf } : {}, credentials: 'same-origin', keepalive: true }); }
+      finally { clear(); window.location.href = redirectTo; }
+      return;
+    }
     const accessToken = getAccessToken();
     try {
       if (accessToken) {
@@ -522,13 +580,16 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const loginWithPassword = async (username: string, password: string): Promise<LoginResult> => {
     const response = await fetcher(`${config.issuer}/api/v1/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(cookieSession ? { 'X-Gosso-Cookie-Session': '1' } : {}) },
       body: JSON.stringify({ username, password }),
+      credentials: 'same-origin',
     });
     const result = await parseJsonEnvelope<LoginResult>(response, 'Login failed');
-    if (result.access_token) {
+    if (!cookieSession && result.access_token) {
       saveTokenSet(result as TokenResponse);
       await fetchUserProfile(result.access_token);
+    } else if (cookieSession && !result.requires_mfa) {
+      await fetchUserProfile();
     }
     return result;
   };
@@ -536,12 +597,13 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const verifyMfa = async (mfaToken: string, code: string, type: 'totp' | 'passkey' = 'totp'): Promise<TokenResponse> => {
     const response = await fetcher(`${config.issuer}/api/v1/auth/mfa/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(cookieSession ? { 'X-Gosso-Cookie-Session': '1' } : {}) },
       body: JSON.stringify({ mfa_token: mfaToken, code, type }),
+      credentials: 'same-origin',
     });
     const data = await parseJsonEnvelope<TokenResponse>(response, 'MFA verification failed');
-    saveTokenSet(data);
-    await fetchUserProfile(data.access_token);
+    if (!cookieSession) saveTokenSet(data);
+    await fetchUserProfile(cookieSession ? undefined : data.access_token);
     return data;
   };
 
@@ -550,6 +612,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
+      credentials: 'same-origin',
     });
     const begin = await parseJsonEnvelope<{ options: PublicKeyCredentialRequestOptions; request_id: string }>(
       beginRes,
@@ -568,7 +631,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     const assertionResponse = assertion.response as AuthenticatorAssertionResponse;
     const completeRes = await fetcher(`${config.issuer}/api/v1/passkey/login/complete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(cookieSession ? { 'X-Gosso-Cookie-Session': '1' } : {}) },
       body: JSON.stringify({
         request_id: begin.request_id,
         id: assertion.id,
@@ -583,8 +646,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       }),
     });
     const data = await parseJsonEnvelope<TokenResponse>(completeRes, 'Passkey login failed');
-    saveTokenSet(data);
-    await fetchUserProfile(data.access_token);
+    if (!cookieSession) saveTokenSet(data);
+    await fetchUserProfile(cookieSession ? undefined : data.access_token);
     return data;
   };
 
@@ -735,7 +798,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     getRefreshToken,
     getUserProfile: readProfile,
     getSnapshot,
-    isLoggedIn: () => Boolean(getAccessToken()),
+    isLoggedIn: () => cookieSession ? Boolean(readProfile()) : Boolean(getAccessToken()),
     isAdmin: () => hasAdminAccess(readProfile(), getAccessToken()),
     saveTokenSet,
     clear,

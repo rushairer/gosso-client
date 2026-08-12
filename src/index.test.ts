@@ -39,6 +39,12 @@ function createClient(fetchImpl = vi.fn()) {
   });
 }
 
+function createCookieClient(fetchImpl = vi.fn()) {
+	return createGossoClient({
+		issuer: 'https://sso.example.test', clientId: 'blog-spa', redirectUri: 'https://app.example.test/callback', scope: 'openid profile email', postLoginDefaultPath: '/admin', loginPath: '/login', storagePrefix: 'cookie-test', sessionMode: 'cookie', sessionProfileEndpoint: '/api/me/session', fetchImpl: fetchImpl as unknown as typeof fetch,
+	});
+}
+
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -196,4 +202,22 @@ describe('@gosso/client', () => {
       configurable: true,
     });
   });
+
+	it('keeps tokens out of Web Storage in cookie session mode', async () => {
+		const fetchMock = vi.fn()
+			.mockResolvedValueOnce(jsonResponse({ expires_in: 900 }))
+			.mockResolvedValueOnce(jsonResponse({ sub: 'user-1', preferred_username: 'aben' }))
+			.mockResolvedValueOnce(jsonResponse({ data: { sub: 'user-1', roles: ['admin'], scope: 'openid profile admin' } }));
+		const client = createCookieClient(fetchMock);
+		localStorage.setItem('cookie-test:auth_state', 'state-1');
+		localStorage.setItem('cookie-test:pkce_verifier', 'verifier-1');
+		// Cookie mode keeps transient PKCE state in session storage.
+		sessionStorage.setItem('cookie-test:auth_state', 'state-1');
+		sessionStorage.setItem('cookie-test:pkce_verifier', 'verifier-1');
+		await client.handleRedirectCallback('code-1', 'state-1');
+		expect(localStorage.getItem('cookie-test:access_token')).toBeNull();
+		expect(localStorage.getItem('cookie-test:refresh_token')).toBeNull();
+		expect(client.isAdmin()).toBe(true);
+		expect(fetchMock.mock.calls[0][1].headers['X-Gosso-Cookie-Session']).toBe('1');
+	});
 });
