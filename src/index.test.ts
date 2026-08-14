@@ -40,9 +40,19 @@ function createClient(fetchImpl = vi.fn()) {
 }
 
 function createCookieClient(fetchImpl = vi.fn()) {
-	return createGossoClient({
-		issuer: 'https://sso.example.test', clientId: 'blog-spa', redirectUri: 'https://app.example.test/callback', scope: 'openid profile email', postLoginDefaultPath: '/admin', loginPath: '/login', storagePrefix: 'cookie-test', sessionMode: 'cookie', sessionProfileEndpoint: '/api/me/session', fetchImpl: fetchImpl as unknown as typeof fetch,
-	});
+  return createGossoClient({
+    issuer: 'https://sso.example.test',
+    clientId: 'blog-spa',
+    redirectUri: 'https://app.example.test/callback',
+    scope: 'openid profile email',
+    postLoginDefaultPath: '/admin',
+    loginPath: '/login',
+    storagePrefix: 'cookie-test',
+    sessionMode: 'cookie',
+    sessionProfileEndpoint: '/api/me/session',
+    csrfCookieName: 'blog_csrf_token',
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
 }
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -62,7 +72,12 @@ describe('@gosso/client', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'localStorage', { value: createLocalStorageMock(), configurable: true });
     localStorage.clear();
+    sessionStorage.clear();
     document.cookie = 'access_token=; path=/; max-age=-1; SameSite=Lax';
+    document.cookie = 'blog_csrf_token=; path=/; max-age=0; Secure';
+    document.cookie = '__Host-csrf_token=; path=/; max-age=0; Secure';
+    document.cookie = 'csrf_token=; path=/; max-age=0';
+    Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
     vi.restoreAllMocks();
   });
 
@@ -203,21 +218,200 @@ describe('@gosso/client', () => {
     });
   });
 
-	it('keeps tokens out of Web Storage in cookie session mode', async () => {
-		const fetchMock = vi.fn()
-			.mockResolvedValueOnce(jsonResponse({ expires_in: 900 }))
-			.mockResolvedValueOnce(jsonResponse({ sub: 'user-1', preferred_username: 'aben' }))
-			.mockResolvedValueOnce(jsonResponse({ data: { sub: 'user-1', roles: ['admin'], scope: 'openid profile admin' } }));
-		const client = createCookieClient(fetchMock);
-		localStorage.setItem('cookie-test:auth_state', 'state-1');
-		localStorage.setItem('cookie-test:pkce_verifier', 'verifier-1');
-		// Cookie mode keeps transient PKCE state in session storage.
-		sessionStorage.setItem('cookie-test:auth_state', 'state-1');
-		sessionStorage.setItem('cookie-test:pkce_verifier', 'verifier-1');
-		await client.handleRedirectCallback('code-1', 'state-1');
-		expect(localStorage.getItem('cookie-test:access_token')).toBeNull();
-		expect(localStorage.getItem('cookie-test:refresh_token')).toBeNull();
-		expect(client.isAdmin()).toBe(true);
-		expect(fetchMock.mock.calls[0][1].headers['X-Gosso-Cookie-Session']).toBe('1');
-	});
+  it('keeps tokens out of Web Storage in cookie session mode', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ expires_in: 900 }))
+      .mockResolvedValueOnce(jsonResponse({ sub: 'user-1', preferred_username: 'aben' }))
+      .mockResolvedValueOnce(jsonResponse({ data: { sub: 'user-1', roles: ['admin'], scope: 'openid profile admin' } }));
+    const client = createCookieClient(fetchMock);
+    // Cookie mode keeps transient PKCE state in session storage.
+    sessionStorage.setItem('cookie-test:auth_state', 'state-1');
+    sessionStorage.setItem('cookie-test:pkce_verifier', 'verifier-1');
+    await client.handleRedirectCallback('code-1', 'state-1');
+    expect(localStorage.getItem('cookie-test:access_token')).toBeNull();
+    expect(localStorage.getItem('cookie-test:refresh_token')).toBeNull();
+    expect(client.isAdmin()).toBe(true);
+    expect(fetchMock.mock.calls[0][1].headers['X-Gosso-Cookie-Session']).toBe('1');
+  });
+
+  it.each([
+    ['blog-first', ['blog_csrf_token=blog-value', '__Host-csrf_token=gosso-value']],
+    ['gosso-first', ['__Host-csrf_token=gosso-value', 'blog_csrf_token=blog-value']],
+  ])('selects CSRF cookies by request target regardless of cookie order (%s)', async (_name, cookies) => {
+    for (const cookie of cookies) document.cookie = `${cookie}; path=/; Secure`;
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const client = createCookieClient(fetchMock);
+
+    await client.apiFetch('/api/admin/posts', { method: 'POST' });
+    await client.apiFetch('https://sso.example.test/api/v1/auth/profile', { method: 'PUT' });
+
+    const blogHeaders = fetchMock.mock.calls[0][1].headers as Headers;
+    const identityHeaders = fetchMock.mock.calls[1][1].headers as Headers;
+    expect(blogHeaders.get('X-CSRF-Token')).toBe('blog-value');
+    expect(identityHeaders.get('X-CSRF-Token')).toBe('gosso-value');
+  });
+
+  it('refreshes a cookie session and retries the original request exactly once', async () => {
+    document.cookie = '__Host-csrf_token=gosso-value; path=/; Secure';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ data: { ok: true } }));
+    const client = createCookieClient(fetchMock);
+
+    const response = await client.apiFetch('/api/admin/posts');
+
+    expect(response.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const refreshHeaders = fetchMock.mock.calls[1][1].headers as Record<string, string>;
+    expect(refreshHeaders['X-CSRF-Token']).toBe('gosso-value');
+  });
+
+  it('recovers a missing GOSSO CSRF cookie with a safe GET before refresh', async () => {
+    document.cookie = 'blog_csrf_token=blog-value; path=/; Secure';
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/admin/posts') {
+        const calls = fetchMock.mock.calls.filter(([value]) => value === '/api/admin/posts').length;
+        return calls === 1 ? new Response(null, { status: 401 }) : jsonResponse({ data: { ok: true } });
+      }
+      if (url.endsWith('/api/v1/auth/session')) {
+        document.cookie = '__Host-csrf_token=renewed-gosso; path=/; Secure';
+        return new Response(null, { status: 401 });
+      }
+      return jsonResponse({ ok: true });
+    });
+    const client = createCookieClient(fetchMock);
+
+    await expect(client.apiFetch('/api/admin/posts')).resolves.toMatchObject({ status: 200 });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/admin/posts',
+      'https://sso.example.test/api/v1/auth/session',
+      'https://sso.example.test/api/v1/auth/refresh',
+      '/api/admin/posts',
+    ]);
+    const refreshHeaders = fetchMock.mock.calls[2][1].headers as Record<string, string>;
+    expect(refreshHeaders['X-CSRF-Token']).toBe('renewed-gosso');
+  });
+
+  it('coalesces concurrent 401 responses into one refresh in a page', async () => {
+    document.cookie = '__Host-csrf_token=gosso-value; path=/; Secure';
+    let protectedCalls = 0;
+    let refreshCalls = 0;
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/admin/posts') {
+        protectedCalls += 1;
+        return protectedCalls <= 2 ? new Response(null, { status: 401 }) : jsonResponse({ ok: true });
+      }
+      refreshCalls += 1;
+      await refreshGate;
+      return jsonResponse({ ok: true });
+    });
+    const client = createCookieClient(fetchMock);
+
+    const first = client.apiFetch('/api/admin/posts');
+    const second = client.apiFetch('/api/admin/posts');
+    await vi.waitFor(() => expect(refreshCalls).toBe(1));
+    releaseRefresh();
+    const responses = await Promise.all([first, second]);
+
+    expect(responses.every((response) => response.ok)).toBe(true);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('uses Web Locks and a generation marker to avoid refresh-token rotation races across tabs', async () => {
+    document.cookie = '__Host-csrf_token=gosso-value; path=/; Secure';
+    let queue = Promise.resolve();
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: <T>(_name: string, _options: { mode: 'exclusive' }, callback: () => T | Promise<T>): Promise<T> => {
+          const result = queue.then(callback);
+          queue = result.then(() => undefined, () => undefined);
+          return result;
+        },
+      },
+    });
+    let refreshCalls = 0;
+    const makeFetcher = () => {
+      let protectedCalls = 0;
+      return vi.fn(async (url: string) => {
+        if (url === '/api/admin/posts') {
+          protectedCalls += 1;
+          return protectedCalls === 1 ? new Response(null, { status: 401 }) : jsonResponse({ ok: true });
+        }
+        refreshCalls += 1;
+        return jsonResponse({ ok: true });
+      });
+    };
+    const tabOne = createCookieClient(makeFetcher());
+    const tabTwo = createCookieClient(makeFetcher());
+
+    const responses = await Promise.all([
+      tabOne.apiFetch('/api/admin/posts'),
+      tabTwo.apiFetch('/api/admin/posts'),
+    ]);
+
+    expect(responses.every((response) => response.ok)).toBe(true);
+    expect(refreshCalls).toBe(1);
+  });
+
+  it('starts PKCE reauthorization once when refresh is invalid and does not recurse', async () => {
+    document.cookie = '__Host-csrf_token=gosso-value; path=/; Secure';
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/v1/auth/refresh')) return jsonResponse({ message: 'invalid or expired token' }, { status: 401 });
+      return new Response(null, { status: 401 });
+    });
+    const client = createCookieClient(fetchMock);
+
+    const response = await client.apiFetch('/api/admin/posts');
+
+    expect(response.status).toBe(401);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/auth/refresh'))).toHaveLength(1);
+    expect(sessionStorage.getItem('cookie-test:pkce_verifier')).toBeTruthy();
+    expect(sessionStorage.getItem('cookie-test:post_login_redirect')).toBe('/');
+    expect(sessionStorage.getItem('cookie-test:auth_redirect_guard')).toBeTruthy();
+    const firstState = sessionStorage.getItem('cookie-test:auth_state');
+
+    await client.apiFetch('/api/admin/posts');
+
+    expect(sessionStorage.getItem('cookie-test:auth_state')).toBe(firstState);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/auth/refresh'))).toHaveLength(2);
+  });
+
+  it('does not retry indefinitely when the retried request is still 401', async () => {
+    document.cookie = '__Host-csrf_token=gosso-value; path=/; Secure';
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/v1/auth/refresh')) return jsonResponse({ ok: true });
+      return new Response(null, { status: 401 });
+    });
+    const client = createCookieClient(fetchMock);
+
+    await client.apiFetch('/api/admin/posts');
+
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/admin/posts')).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/auth/refresh'))).toHaveLength(1);
+  });
+
+  it('logs out with only the GOSSO CSRF cookie and clears state only after server success', async () => {
+    document.cookie = 'blog_csrf_token=blog-value; path=/; Secure';
+    document.cookie = '__Host-csrf_token=gosso-value; path=/; Secure';
+    let logoutCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/oidc/userinfo')) return jsonResponse({ sub: 'user-1', roles: ['admin'], scope: 'openid admin' });
+      if (url === '/api/me/session') return jsonResponse({ data: { roles: ['admin'], scope: 'openid admin' } });
+      logoutCalls += 1;
+      return new Response(null, { status: logoutCalls === 1 ? 403 : 204 });
+    });
+    const client = createCookieClient(fetchMock);
+    await client.fetchUserProfile();
+
+    await expect(client.logout('/')).rejects.toThrow('Logout failed (403)');
+    expect(client.isLoggedIn()).toBe(true);
+    await expect(client.logout('/')).resolves.toBeUndefined();
+    expect(client.isLoggedIn()).toBe(false);
+    const failedLogoutHeaders = fetchMock.mock.calls[2][1].headers as Record<string, string>;
+    expect(failedLogoutHeaders['X-CSRF-Token']).toBe('gosso-value');
+  });
 });

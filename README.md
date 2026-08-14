@@ -31,6 +31,9 @@ export const gossoClient = createGossoClient({
   postLoginDefaultPath: '/admin',
   loginPath: '/login',
   storagePrefix: 'my-app',
+  sessionMode: 'cookie',
+  sessionProfileEndpoint: '/api/me/session',
+  csrfCookieName: 'blog_csrf_token',
 });
 ```
 
@@ -100,6 +103,9 @@ interface GossoClientConfig {
   postLoginDefaultPath: string;
   loginPath: string;
   storagePrefix: string;
+  sessionMode?: 'token' | 'cookie';
+  sessionProfileEndpoint?: string;
+  csrfCookieName?: string;
   fetchImpl?: typeof fetch;
   onAuthRequired?: () => void;
   onSessionChanged?: (snapshot: SessionSnapshot) => void;
@@ -108,12 +114,17 @@ interface GossoClientConfig {
 
 Use a unique `storagePrefix` for each SPA on the same origin to avoid token collisions.
 
+In Cookie Session mode, `csrfCookieName` belongs to the application API only. Gosso identity requests always use `__Host-csrf_token` on HTTPS, or `csrf_token` only for an HTTP development issuer. Cookie lookup is exact and never depends on `document.cookie` order.
+
+Gosso's default lifetimes are independent: Access Token 15 minutes, Refresh Token 168 hours, Session 24 hours, and CSRF Cookie 4 hours (capped at 24 hours). A missing CSRF Cookie does not invalidate the Refresh Token: the SDK first performs a safe session GET to recover Gosso's CSRF Cookie, then refreshes and retries the original application request once.
+
 ## Security Notes
 
 - Use Authorization Code + PKCE for browser clients.
 - Serve production clients over HTTPS.
 - Keep the Gosso issuer and app behind a same-origin gateway when possible.
-- Tokens are stored in browser `localStorage` and mirrored to an `access_token` cookie for same-origin Gosso redirects. Treat XSS prevention as part of your security boundary.
+- Prefer `sessionMode: "cookie"`; access and refresh tokens then remain in `__Host-*` HttpOnly cookies and are never written to Web Storage.
+- Cookie Session refresh is single-flight within a page and coordinated across tabs with the Web Locks API. Only a non-sensitive refresh generation marker is stored in `localStorage`.
 
 ## License
 

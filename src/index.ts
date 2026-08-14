@@ -94,6 +94,7 @@ const REFRESH_LOCK_TTL_MS = 15_000;
 const REFRESH_WAIT_TIMEOUT_MS = 20_000;
 const REFRESH_WAIT_POLL_MS = 100;
 const REFRESH_WEB_LOCK_NAME = 'gosso-auth-refresh';
+const AUTH_REDIRECT_GUARD_MS = 30_000;
 
 const defaultConfig: Pick<GossoClientConfig, 'scope' | 'postLoginDefaultPath' | 'loginPath' | 'storagePrefix'> = {
   scope: 'openid profile email',
@@ -139,12 +140,22 @@ function getCookieName(baseName: string): string {
   return typeof location !== 'undefined' && location.protocol === 'https:' ? `__Secure-${baseName}` : baseName;
 }
 
-function readCSRFToken(preferredName?: string): string | null {
-	for (const raw of document.cookie.split(';')) {
-		const [name, ...value] = raw.trim().split('=');
-		if (name === preferredName || name === '__Host-csrf_token' || name === 'csrf_token' || name === 'blog_csrf_token') return decodeURIComponent(value.join('='));
-	}
-	return null;
+function readCookie(name: string): string | null {
+  for (const raw of document.cookie.split(';')) {
+    const [cookieName, ...value] = raw.trim().split('=');
+    if (cookieName === name) return decodeURIComponent(value.join('='));
+  }
+  return null;
+}
+
+class CookieSessionRefreshError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'CookieSessionRefreshError';
+  }
 }
 
 function readClaimsFromAccessToken(accessToken: string): Record<string, unknown> | null {
@@ -230,7 +241,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
   const cookieSession = config.sessionMode === 'cookie';
   const flowStorage = cookieSession ? sessionStorage : localStorage;
-  const fetcher = config.fetchImpl || fetch.bind(window);
+  const fetcher = (input: RequestInfo | URL, init?: RequestInit) =>
+    (config.fetchImpl || globalThis.fetch)(input, init);
   const key = (name: string) => `${config.storagePrefix}:${name}`;
   const storageKeys = {
     accessToken: key('access_token'),
@@ -242,6 +254,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     tokenIssuedAt: key('token_issued_at'),
     tokenExpiresIn: key('token_expires_in'),
     refreshLock: key('auth_refresh_lock'),
+    refreshGeneration: key('auth_refresh_generation'),
+    authRedirectGuard: key('auth_redirect_guard'),
   };
 
   let refreshPromise: Promise<string> | null = null;
@@ -314,6 +328,30 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     window.location.href = config.loginPath;
   };
 
+  const identityCSRFCookieName = new URL(config.issuer).protocol === 'https:'
+    ? '__Host-csrf_token'
+    : 'csrf_token';
+
+  const isIdentityRequest = (url: string): boolean => {
+    if (url.startsWith(`${config.issuer}/`)) return true;
+    const path = url.startsWith('/') ? url : new URL(url, window.location.origin).pathname;
+    return path.startsWith('/api/v1/') || path.startsWith('/oauth2/') || path.startsWith('/oidc/');
+  };
+
+  const readIdentityCSRFToken = (): string | null => readCookie(identityCSRFCookieName);
+
+  const ensureIdentityCSRFToken = async (): Promise<string> => {
+    let token = readIdentityCSRFToken();
+    if (token) return token;
+
+    // Safe methods are accepted without CSRF validation and the GOSSO middleware
+    // reissues its own short-lived double-submit cookie before auth is evaluated.
+    await fetcher(`${config.issuer}/api/v1/auth/session`, { credentials: 'same-origin' });
+    token = readIdentityCSRFToken();
+    if (!token) throw new CookieSessionRefreshError(403, 'GOSSO CSRF recovery failed');
+    return token;
+  };
+
   const tryAcquireRefreshLock = (owner: string): boolean => {
     const now = Date.now();
     const current = parseRefreshLock(localStorage.getItem(storageKeys.refreshLock));
@@ -372,6 +410,35 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     return locks.request(REFRESH_WEB_LOCK_NAME, { mode: 'exclusive' }, callback);
   };
 
+  const currentRefreshGeneration = (): string | null => localStorage.getItem(storageKeys.refreshGeneration);
+
+  const markCookieRefreshComplete = () => {
+    localStorage.setItem(storageKeys.refreshGeneration, `${Date.now()}:${generateRefreshOwner()}`);
+  };
+
+  const performCookieRefresh = async (observedGeneration: string | null): Promise<string> => {
+    // A different tab may have completed refresh while this tab waited for the
+    // Web Lock. Its retried request will use the newly rotated HttpOnly cookies.
+    if (currentRefreshGeneration() !== observedGeneration) return '';
+
+    const csrf = await ensureIdentityCSRFToken();
+    const response = await fetcher(`${config.issuer}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrf, 'X-Gosso-Cookie-Session': '1' },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      const message = response.status === 401
+        ? 'Refresh token is invalid, expired, or revoked'
+        : response.status === 403
+          ? 'GOSSO CSRF recovery failed'
+          : 'Cookie session refresh failed';
+      throw new CookieSessionRefreshError(response.status, message);
+    }
+    markCookieRefreshComplete();
+    return '';
+  };
+
   const performTokenRefresh = async (previousRefreshToken: string): Promise<string> => {
     const latestRefreshToken = getRefreshToken();
     if (!latestRefreshToken) throw new Error('No refresh token found');
@@ -391,10 +458,29 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
 
   const refreshAccessToken = async (): Promise<string> => {
     if (refreshPromise) return refreshPromise;
-    refreshPromise = (async () => {
+    const pending = (async () => {
       const owner = generateRefreshOwner();
       let lockAcquired = false;
       try {
+        if (cookieSession) {
+          const observedGeneration = currentRefreshGeneration();
+          if ((navigator as NavigatorWithLocks).locks) {
+            return requestBrowserRefreshLock(() => performCookieRefresh(observedGeneration));
+          }
+          lockAcquired = tryAcquireRefreshLock(owner);
+          if (!lockAcquired) {
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < REFRESH_WAIT_TIMEOUT_MS) {
+              if (currentRefreshGeneration() !== observedGeneration) return '';
+              const lock = parseRefreshLock(localStorage.getItem(storageKeys.refreshLock));
+              if (!lock || lock.expiresAt <= Date.now()) break;
+              await new Promise((resolve) => window.setTimeout(resolve, REFRESH_WAIT_POLL_MS));
+            }
+            lockAcquired = tryAcquireRefreshLock(owner);
+            if (!lockAcquired) throw new Error('Cookie session refresh is already in progress');
+          }
+          return performCookieRefresh(observedGeneration);
+        }
         const refreshToken = getRefreshToken();
         if (!refreshToken) throw new Error('No refresh token found');
         if ((navigator as NavigatorWithLocks).locks) {
@@ -410,10 +496,14 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
         return performTokenRefresh(refreshToken);
       } finally {
         if (lockAcquired) releaseRefreshLock(owner);
-        refreshPromise = null;
       }
     })();
-    return refreshPromise;
+    refreshPromise = pending;
+    void pending.then(
+      () => { if (refreshPromise === pending) refreshPromise = null; },
+      () => { if (refreshPromise === pending) refreshPromise = null; },
+    );
+    return pending;
   };
 
   const fetchUserProfile = async (accessToken = getAccessToken()): Promise<UserProfile> => {
@@ -426,6 +516,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       const data = await identity.json() as UserProfile;
       if (session) Object.assign(data, (await session.json() as ApiEnvelope<Partial<UserProfile>>).data || {});
       sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
+      sessionStorage.removeItem(storageKeys.authRedirectGuard);
       emitSessionChanged();
       return data;
     }
@@ -447,22 +538,45 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const apiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
     if (cookieSession) {
       const headers = new Headers(options.headers || {});
-      const issuerRequest = url.startsWith(`${config.issuer}/`);
+      const issuerRequest = isIdentityRequest(url);
       if (!['GET', 'HEAD', 'OPTIONS'].includes((options.method || 'GET').toUpperCase()) && !headers.has('X-CSRF-Token')) {
-        const csrf = readCSRFToken(issuerRequest ? undefined : config.csrfCookieName);
+        const csrf = issuerRequest
+          ? readIdentityCSRFToken()
+          : config.csrfCookieName ? readCookie(config.csrfCookieName) : null;
         if (csrf) headers.set('X-CSRF-Token', csrf);
       }
       let response = await fetcher(url, { ...options, headers, credentials: 'same-origin' });
       if (response.status === 401 && !issuerRequest) {
-        const csrf = readCSRFToken();
-        const refreshResponse = await fetcher(`${config.issuer}/api/v1/auth/refresh`, {
-          method: 'POST',
-          headers: csrf ? { 'X-CSRF-Token': csrf, 'X-Gosso-Cookie-Session': '1' } : { 'X-Gosso-Cookie-Session': '1' },
-          credentials: 'same-origin',
-        });
-        if (refreshResponse.ok) response = await fetcher(url, { ...options, headers, credentials: 'same-origin' });
+        try {
+          await refreshAccessToken();
+          // Exactly one retry. A second 401 is treated as authentication failure.
+          response = await fetcher(url, { ...options, headers, credentials: 'same-origin' });
+        } catch {
+          response = new Response(null, { status: 401, statusText: 'Authentication required' });
+        }
       }
-      if (response.status === 401) clear();
+      if (response.status === 401) {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        const previous = sessionStorage.getItem(storageKeys.authRedirectGuard);
+        const now = Date.now();
+        let recentlyRedirected = false;
+        try {
+          const guard = previous ? JSON.parse(previous) as { at?: number; returnTo?: string } : null;
+          recentlyRedirected = guard?.returnTo === returnTo && typeof guard.at === 'number' && now - guard.at < AUTH_REDIRECT_GUARD_MS;
+        } catch {
+          recentlyRedirected = false;
+        }
+        if (!recentlyRedirected) {
+          clear();
+          sessionStorage.setItem(storageKeys.authRedirectGuard, JSON.stringify({ at: now, returnTo }));
+          await redirectToAuthorize(returnTo);
+        } else if (previous) {
+          // Preserve the in-flight PKCE state while still clearing the stale UI profile.
+          sessionStorage.removeItem(storageKeys.userProfile);
+          emitSessionChanged();
+          sessionStorage.setItem(storageKeys.authRedirectGuard, previous);
+        }
+      }
       return response;
     }
     let token = getAccessToken();
@@ -551,14 +665,22 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     await fetchUserProfile(cookieSession ? undefined : tokenSet.access_token);
     const redirectTo = flowStorage.getItem(storageKeys.postLoginRedirect) || config.postLoginDefaultPath;
     flowStorage.removeItem(storageKeys.postLoginRedirect);
+    sessionStorage.removeItem(storageKeys.authRedirectGuard);
     return { tokenSet, redirectTo };
   };
 
   const logout = async (redirectTo = '/') => {
     if (cookieSession) {
-      const csrf = readCSRFToken();
-      try { await fetcher(`${config.issuer}/api/v1/auth/logout`, { method: 'POST', headers: csrf ? { 'X-CSRF-Token': csrf } : {}, credentials: 'same-origin', keepalive: true }); }
-      finally { clear(); window.location.href = redirectTo; }
+      const csrf = await ensureIdentityCSRFToken();
+      const response = await fetcher(`${config.issuer}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': csrf },
+        credentials: 'same-origin',
+        keepalive: true,
+      });
+      if (!response.ok) throw new Error(`Logout failed (${response.status})`);
+      clear();
+      window.location.href = redirectTo;
       return;
     }
     const accessToken = getAccessToken();
