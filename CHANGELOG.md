@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-15
+### Added
+- Add `subscribe(listener)` to `GossoClient` so every SPA can observe the
+  cookie-session snapshot without maintaining a duplicate authentication store.
+- Add `refreshIdentityRequests` for the GOSSO Admin SPA, whose protected API
+  requests are served by the same origin as the identity provider.
+
 ## [0.2.1] - 2026-08-14
 ### Fixed
 - Select application and Gosso CSRF cookies by exact request target instead of cookie order.

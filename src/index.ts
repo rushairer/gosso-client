@@ -12,6 +12,8 @@ export interface GossoClientConfig {
   sessionProfileEndpoint?: string;
   /** CSRF cookie used by same-origin application API requests in cookie session mode. */
   csrfCookieName?: string;
+  /** Refresh a Cookie Session after a 401 from protected GOSSO APIs as well. */
+  refreshIdentityRequests?: boolean;
   fetchImpl?: typeof fetch;
   onAuthRequired?: () => void;
   onSessionChanged?: (snapshot: SessionSnapshot) => void;
@@ -40,6 +42,9 @@ export interface SessionSnapshot {
   loggedIn: boolean;
   isAdmin: boolean;
 }
+
+/** Receives the current state after this client changes its local session view. */
+export type SessionListener = (snapshot: SessionSnapshot) => void;
 
 export interface LoginResult {
   access_token?: string;
@@ -259,6 +264,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   let refreshPromise: Promise<string> | null = null;
+  const sessionListeners = new Set<SessionListener>();
 
   const setCookie = (name: string, value: string, maxAgeSeconds: number) => {
     const cookieName = getCookieName(name);
@@ -298,7 +304,21 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 
   const emitSessionChanged = () => {
-    config.onSessionChanged?.(getSnapshot());
+    const snapshot = getSnapshot();
+    config.onSessionChanged?.(snapshot);
+    sessionListeners.forEach((listener) => listener(snapshot));
+  };
+
+  /**
+   * Observe profile, login and logout changes without reimplementing a session
+   * store in each consuming SPA. Callers receive future changes only and must
+   * read getSnapshot() for the initial value.
+   */
+  const subscribe = (listener: SessionListener) => {
+    sessionListeners.add(listener);
+    return () => {
+      sessionListeners.delete(listener);
+    };
   };
 
   const saveTokenSet = (data: TokenResponse | { access_token: string; refresh_token?: string; expires_in?: number }) => {
@@ -546,7 +566,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
         if (csrf) headers.set('X-CSRF-Token', csrf);
       }
       let response = await fetcher(url, { ...options, headers, credentials: 'same-origin' });
-      if (response.status === 401 && !issuerRequest) {
+      if (response.status === 401 && (!issuerRequest || config.refreshIdentityRequests)) {
         try {
           await refreshAccessToken();
           // Exactly one retry. A second 401 is treated as authentication failure.
@@ -920,6 +940,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     getRefreshToken,
     getUserProfile: readProfile,
     getSnapshot,
+    subscribe,
     isLoggedIn: () => cookieSession ? Boolean(readProfile()) : Boolean(getAccessToken()),
     isAdmin: () => hasAdminAccess(readProfile(), getAccessToken()),
     saveTokenSet,

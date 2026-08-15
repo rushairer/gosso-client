@@ -414,4 +414,17 @@ describe('@gosso/client', () => {
     const failedLogoutHeaders = fetchMock.mock.calls[2][1].headers as Record<string, string>;
     expect(failedLogoutHeaders['X-CSRF-Token']).toBe('gosso-value');
   });
+
+  it('notifies subscriptions when the client session changes', () => {
+    const client = createClient();
+    const listener = vi.fn();
+    const unsubscribe = client.subscribe(listener);
+
+    client.saveTokenSet({ access_token: 'access', refresh_token: 'refresh', expires_in: 900 });
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ loggedIn: true, accessToken: 'access' }));
+
+    unsubscribe();
+    client.clear();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });
