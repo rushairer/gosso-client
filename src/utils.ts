@@ -1,4 +1,5 @@
 import type { ApiEnvelope, RefreshLock, UserProfile } from './types';
+import { GossoError } from './errors';
 
 export function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
@@ -120,7 +121,7 @@ export function generateRefreshOwner(): string {
 export async function parseJsonEnvelope<T>(response: Response, fallbackMessage: string): Promise<T> {
   const body = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok) {
-    throw new Error(body.message || fallbackMessage);
+    throw new GossoError(body.message || fallbackMessage, 'API_ERROR');
   }
   return body.data as T;
 }

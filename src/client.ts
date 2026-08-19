@@ -29,6 +29,12 @@ import {
   readRolesFromAccessToken,
   readScopeFromAccessToken,
 } from './utils';
+import {
+  AuthenticationError,
+  CsrfError,
+  PasskeyError,
+  TokenRefreshError,
+} from './errors';
 import { generateCodeChallenge } from './pkce';
 
 const REFRESH_LOCK_TTL_MS = 15_000;
@@ -265,7 +271,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
 
   const performTokenRefresh = async (previousRefreshToken: string): Promise<string> => {
     const latestRefreshToken = getRefreshToken();
-    if (!latestRefreshToken) throw new Error('No refresh token found');
+    if (!latestRefreshToken) throw new TokenRefreshError('No refresh token found', 'NO_REFRESH_TOKEN');
     if (latestRefreshToken !== previousRefreshToken) {
       const latestAccessToken = getAccessToken();
       if (latestAccessToken) return latestAccessToken;
@@ -301,12 +307,12 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
               await new Promise((resolve) => window.setTimeout(resolve, REFRESH_WAIT_POLL_MS));
             }
             lockAcquired = tryAcquireRefreshLock(owner);
-            if (!lockAcquired) throw new Error('Cookie session refresh is already in progress');
+            if (!lockAcquired) throw new TokenRefreshError('Cookie session refresh is already in progress', 'REFRESH_IN_PROGRESS');
           }
           return performCookieRefresh(observedGeneration);
         }
         const refreshToken = getRefreshToken();
-        if (!refreshToken) throw new Error('No refresh token found');
+        if (!refreshToken) throw new TokenRefreshError('No refresh token found', 'NO_REFRESH_TOKEN');
         if ((navigator as NavigatorWithLocks).locks) {
           return requestBrowserRefreshLock(() => performTokenRefresh(refreshToken));
         }
@@ -315,7 +321,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
           const tokenFromPeer = await waitForRefreshFromAnotherContext(refreshToken);
           if (tokenFromPeer) return tokenFromPeer;
           lockAcquired = tryAcquireRefreshLock(owner);
-          if (!lockAcquired) throw new Error('Token refresh is already in progress');
+          if (!lockAcquired) throw new TokenRefreshError('Token refresh is already in progress', 'REFRESH_IN_PROGRESS');
         }
         return performTokenRefresh(refreshToken);
       } finally {
@@ -336,7 +342,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
         fetcher(`${config.issuer}/oidc/userinfo`, { credentials: 'same-origin' }),
         config.sessionProfileEndpoint ? fetcher(config.sessionProfileEndpoint, { credentials: 'same-origin' }) : Promise.resolve(null),
       ]);
-      if (!identity.ok || (session && !session.ok)) throw new Error('Failed to fetch user profile');
+      if (!identity.ok || (session && !session.ok)) throw new AuthenticationError('Failed to fetch user profile', 'USER_PROFILE_FAILED');
       const data = await identity.json() as UserProfile;
       if (session) Object.assign(data, (await session.json() as ApiEnvelope<Partial<UserProfile>>).data || {});
       sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
@@ -344,11 +350,11 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       emitSessionChanged();
       return data;
     }
-    if (!accessToken) throw new Error('No access token found');
+    if (!accessToken) throw new AuthenticationError('No access token found', 'NO_ACCESS_TOKEN');
     const response = await fetcher(`${config.issuer}/oidc/userinfo`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) throw new Error('Failed to fetch user profile');
+    if (!response.ok) throw new AuthenticationError('Failed to fetch user profile', 'USER_PROFILE_FAILED');
     const data = (await response.json()) as UserProfile;
     const roles = readRolesFromAccessToken(accessToken);
     if (roles) data.roles = roles;
@@ -458,8 +464,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const exchangeCodeForToken = async (code: string, state: string): Promise<TokenResponse> => {
     const savedState = flowStorage.getItem(storageKeys.authState);
     const verifier = flowStorage.getItem(storageKeys.pkceVerifier);
-    if (state !== savedState) throw new Error('State mismatch. Potential CSRF attack.');
-    if (!verifier) throw new Error('PKCE verifier not found. Authentication flow expired.');
+    if (state !== savedState) throw new CsrfError('State mismatch. Potential CSRF attack.', 'CSRF_MISMATCH');
+    if (!verifier) throw new AuthenticationError('PKCE verifier not found. Authentication flow expired.', 'PKCE_VERIFIER_MISSING');
     const body = new URLSearchParams();
     body.append('grant_type', 'authorization_code');
     body.append('client_id', config.clientId);
@@ -473,7 +479,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       credentials: 'same-origin',
     });
     if (!response.ok) {
-      throw new Error(`Token exchange failed: ${await response.text()}`);
+      throw new AuthenticationError(`Token exchange failed: ${await response.text()}`, 'TOKEN_EXCHANGE_FAILED');
     }
     const data = (await response.json()) as TokenResponse;
     if (!cookieSession) saveTokenSet(data);
@@ -500,7 +506,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
         credentials: 'same-origin',
         keepalive: true,
       });
-      if (!response.ok) throw new Error(`Logout failed (${response.status})`);
+      if (!response.ok) throw new AuthenticationError(`Logout failed (${response.status})`, 'LOGOUT_FAILED');
       clear();
       window.location.href = redirectTo;
       return;
@@ -571,7 +577,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       })),
     };
     const assertion = (await navigator.credentials.get({ publicKey: options })) as PublicKeyCredential | null;
-    if (!assertion?.response) throw new Error('Passkey authentication cancelled or failed');
+    if (!assertion?.response) throw new PasskeyError('Passkey authentication cancelled or failed', 'PASSKEY_AUTH_CANCELLED');
     const assertionResponse = assertion.response as AuthenticatorAssertionResponse;
     const completeRes = await fetcher(`${config.issuer}/api/v1/passkey/login/complete`, {
       method: 'POST',
@@ -694,7 +700,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       })),
     };
     const credential = (await navigator.credentials.create({ publicKey: options })) as PublicKeyCredential | null;
-    if (!credential?.response) throw new Error('Passkey registration cancelled or failed');
+    if (!credential?.response) throw new PasskeyError('Passkey registration cancelled or failed', 'PASSKEY_REGISTRATION_CANCELLED');
     const attestationResponse = credential.response as AuthenticatorAttestationResponse;
     const completeRes = await apiFetch(`${config.issuer}/api/v1/passkey/register/complete?request_id=${begin.request_id}`, {
       method: 'POST',

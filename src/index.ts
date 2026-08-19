@@ -16,6 +16,15 @@ export type {
 } from './types';
 
 export {
+  GossoError,
+  AuthenticationError,
+  TokenRefreshError,
+  CsrfError,
+  CryptoError,
+  PasskeyError,
+} from './errors';
+
+export {
   normalizeBaseUrl,
   generateRandomString,
   bufferToBase64URL,

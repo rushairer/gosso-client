@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGossoClient, generateRandomString } from './index';
+import {
+  createGossoClient,
+  generateRandomString,
+  GossoError,
+  CsrfError,
+  AuthenticationError,
+  TokenRefreshError,
+  CryptoError,
+  PasskeyError,
+} from './index';
 
 function createLocalStorageMock(): Storage {
   let values = new Map<string, string>();
@@ -427,4 +436,54 @@ describe('@gosso/client', () => {
     client.clear();
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  describe('Typed Error Hierarchy', () => {
+    it('properly instantiates all typed SDK error subclasses with code and name', () => {
+      const baseErr = new GossoError('base message', 'BASE_CODE');
+      expect(baseErr).toBeInstanceOf(Error);
+      expect(baseErr).toBeInstanceOf(GossoError);
+      expect(baseErr.name).toBe('GossoError');
+      expect(baseErr.code).toBe('BASE_CODE');
+
+      const csrfErr = new CsrfError();
+      expect(csrfErr).toBeInstanceOf(GossoError);
+      expect(csrfErr).toBeInstanceOf(CsrfError);
+      expect(csrfErr.name).toBe('CsrfError');
+      expect(csrfErr.code).toBe('CSRF_MISMATCH');
+
+      const authErr = new AuthenticationError('unauthorized', 'AUTH_FAIL');
+      expect(authErr).toBeInstanceOf(GossoError);
+      expect(authErr).toBeInstanceOf(AuthenticationError);
+      expect(authErr.name).toBe('AuthenticationError');
+
+      const refreshErr = new TokenRefreshError('refresh failed', 'REFRESH_FAIL');
+      expect(refreshErr).toBeInstanceOf(GossoError);
+      expect(refreshErr).toBeInstanceOf(TokenRefreshError);
+      expect(refreshErr.name).toBe('TokenRefreshError');
+
+      const cryptoErr = new CryptoError();
+      expect(cryptoErr).toBeInstanceOf(GossoError);
+      expect(cryptoErr).toBeInstanceOf(CryptoError);
+      expect(cryptoErr.name).toBe('CryptoError');
+
+      const passkeyErr = new PasskeyError('passkey cancel', 'PASSKEY_CANCEL');
+      expect(passkeyErr).toBeInstanceOf(GossoError);
+      expect(passkeyErr).toBeInstanceOf(PasskeyError);
+      expect(passkeyErr.name).toBe('PasskeyError');
+    });
+
+    it('throws CsrfError on OAuth2 state mismatch', async () => {
+      const client = createClient();
+      localStorage.setItem('test:auth_state', 'valid-state');
+      localStorage.setItem('test:pkce_verifier', 'verifier');
+
+      await expect(client.exchangeCodeForToken('code', 'tampered-state')).rejects.toBeInstanceOf(CsrfError);
+    });
+
+    it('throws TokenRefreshError when no refresh token is present', async () => {
+      const client = createClient();
+      await expect(client.refreshAccessToken()).rejects.toBeInstanceOf(TokenRefreshError);
+    });
+  });
 });
+
