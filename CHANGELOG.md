@@ -6,6 +6,16 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Added
+- Add typed `ApiError` responses with HTTP status and stable error codes.
+- Add SDK-owned password reset request and completion methods.
+
+### Changed
+- Normalize Gouno, OAuth, empty, and invalid JSON API responses through the shared envelope parser.
+
+### Security
+- Fail closed when Web Crypto is unavailable instead of generating OAuth state and PKCE verifier values with `Math.random`.
+
 ## [0.3.0] - 2026-08-15
 ### Added
 - Add `subscribe(listener)` to `GossoClient` so every SPA can observe the

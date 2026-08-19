@@ -1,5 +1,5 @@
 import type { ApiEnvelope, RefreshLock, UserProfile } from './types.js';
-import { GossoError } from './errors.js';
+import { ApiError, CryptoError } from './errors.js';
 
 export function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
@@ -9,17 +9,13 @@ export function generateRandomString(length: number): string {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
   let text = '';
   const cryptoObj = (typeof window !== 'undefined' ? window.crypto : null) || (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
-  if (cryptoObj && cryptoObj.getRandomValues) {
-    const array = new Uint8Array(length);
-    cryptoObj.getRandomValues(array);
-    for (let i = 0; i < length; i += 1) {
-      text += possible.charAt(array[i] % possible.length);
-    }
-  } else {
-    // Fallback for environments lacking CSPRNG
-    for (let i = 0; i < length; i += 1) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
+  if (!cryptoObj?.getRandomValues) {
+    throw new CryptoError('Web Crypto API (crypto.getRandomValues) is required for OAuth state and PKCE generation');
+  }
+  const array = new Uint8Array(length);
+  cryptoObj.getRandomValues(array);
+  for (let i = 0; i < length; i += 1) {
+    text += possible.charAt(array[i] % possible.length);
   }
   return text;
 }
@@ -118,10 +114,21 @@ export function generateRefreshOwner(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export async function parseJsonEnvelope<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const body = (await response.json()) as ApiEnvelope<T>;
+export async function parseJsonEnvelope<T>(response: Response, fallbackMessage = 'Request failed'): Promise<T> {
+  const contentType = response.headers.get('content-type') || '';
+  const hasBody = response.status !== 204 && response.status !== 205;
+  let body: ApiEnvelope<T> | null = null;
+  if (hasBody && contentType.includes('application/json')) {
+    body = (await response.json().catch(() => null)) as ApiEnvelope<T> | null;
+  }
   if (!response.ok) {
-    throw new GossoError(body.message || fallbackMessage, 'API_ERROR');
+    const message = body?.message || body?.error_description || fallbackMessage;
+    const code = typeof body?.error === 'string' && body.error ? body.error : 'API_ERROR';
+    throw new ApiError(message, response.status, code);
+  }
+  if (!hasBody) return undefined as T;
+  if (!body) {
+    throw new ApiError(fallbackMessage, response.status, 'INVALID_RESPONSE');
   }
   return body.data as T;
 }

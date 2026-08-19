@@ -544,6 +544,26 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     return result;
   };
 
+  const requestPasswordReset = async (email: string): Promise<void> => {
+    const response = await fetcher(`${config.issuer}/api/v1/auth/password/forgot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+      credentials: 'same-origin',
+    });
+    await parseJsonEnvelope<unknown>(response, 'Failed to request a password reset');
+  };
+
+  const resetPassword = async (token: string, newPassword: string): Promise<void> => {
+    const response = await fetcher(`${config.issuer}/api/v1/auth/password/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, new_password: newPassword }),
+      credentials: 'same-origin',
+    });
+    await parseJsonEnvelope<unknown>(response, 'Failed to reset password');
+  };
+
   const verifyMfa = async (mfaToken: string, code: string, type: 'totp' | 'passkey' = 'totp'): Promise<TokenResponse> => {
     const response = await fetcher(`${config.issuer}/api/v1/auth/mfa/verify`, {
       method: 'POST',
@@ -761,6 +781,8 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     refreshAccessToken,
     apiFetch,
     loginWithPassword,
+    requestPasswordReset,
+    resetPassword,
     verifyMfa,
     loginWithPasskey,
     updateProfile,

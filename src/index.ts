@@ -17,6 +17,7 @@ export type {
 
 export {
   GossoError,
+  ApiError,
   AuthenticationError,
   TokenRefreshError,
   CsrfError,

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createGossoClient,
   generateRandomString,
+  parseJsonEnvelope,
   GossoError,
+  ApiError,
   CsrfError,
   AuthenticationError,
   TokenRefreshError,
@@ -199,6 +201,59 @@ describe('@gosso/client', () => {
     expect(str2).toHaveLength(32);
     expect(str1).not.toBe(str2);
     expect(str1).toMatch(/^[A-Za-z0-9\-._~]+$/);
+  });
+
+  it('fails closed before storing OAuth state when Web Crypto is unavailable', async () => {
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true });
+    try {
+      expect(() => generateRandomString(32)).toThrow(CryptoError);
+      await expect(createClient().redirectToAuthorize('/admin')).rejects.toBeInstanceOf(CryptoError);
+      expect(localStorage.getItem('test:pkce_verifier')).toBeNull();
+      expect(localStorage.getItem('test:auth_state')).toBeNull();
+    } finally {
+      if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
+    }
+  });
+
+  it('requests and completes password reset through SDK-owned endpoints', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 200, message: 'success', data: 'sent' }))
+      .mockResolvedValueOnce(jsonResponse({ code: 200, message: 'success', data: 'reset' }));
+    const client = createClient(fetchMock);
+
+    await client.requestPasswordReset('reader@example.test');
+    await client.resetPassword('reset-token', 'correct horse battery staple');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://sso.example.test/api/v1/auth/password/forgot', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ email: 'reader@example.test' }),
+      credentials: 'same-origin',
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://sso.example.test/api/v1/auth/password/reset', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ token: 'reset-token', new_password: 'correct horse battery staple' }),
+      credentials: 'same-origin',
+    }));
+  });
+
+  it('normalizes Gouno, OAuth, empty, and invalid API responses', async () => {
+    await expect(parseJsonEnvelope(jsonResponse({ code: 200, message: 'success', data: { ok: true } }))).resolves.toEqual({ ok: true });
+    await expect(parseJsonEnvelope(new Response(null, { status: 204 }))).resolves.toBeUndefined();
+
+    const oauthError = parseJsonEnvelope(new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Grant rejected' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await expect(oauthError).rejects.toMatchObject({ name: 'ApiError', code: 'invalid_grant', status: 400, message: 'Grant rejected' });
+
+    const invalid = parseJsonEnvelope(new Response('<html>bad gateway</html>', {
+      status: 502,
+      headers: { 'Content-Type': 'text/html' },
+    }), 'Upstream unavailable');
+    await expect(invalid).rejects.toBeInstanceOf(ApiError);
+    await expect(invalid).rejects.toMatchObject({ status: 502, message: 'Upstream unavailable' });
   });
 
   it('uses __Secure- prefix for access token cookie on HTTPS', async () => {
@@ -445,6 +500,11 @@ describe('@gosso/client', () => {
       expect(baseErr.name).toBe('GossoError');
       expect(baseErr.code).toBe('BASE_CODE');
 
+      const apiErr = new ApiError('bad response', 429, 'rate_limited');
+      expect(apiErr).toBeInstanceOf(GossoError);
+      expect(apiErr.name).toBe('ApiError');
+      expect(apiErr.status).toBe(429);
+
       const csrfErr = new CsrfError();
       expect(csrfErr).toBeInstanceOf(GossoError);
       expect(csrfErr).toBeInstanceOf(CsrfError);
@@ -486,4 +546,3 @@ describe('@gosso/client', () => {
     });
   });
 });
-

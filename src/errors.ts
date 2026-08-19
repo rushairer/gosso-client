@@ -15,6 +15,19 @@ export class GossoError extends Error {
 }
 
 /**
+ * Thrown when a Gosso or same-envelope application API returns an error.
+ */
+export class ApiError extends GossoError {
+  public readonly status: number;
+
+  constructor(message: string, status: number, code = 'API_ERROR', cause?: unknown) {
+    super(message, code, cause);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
  * Thrown when user authentication fails or credentials are missing/invalid.
  */
 export class AuthenticationError extends GossoError {

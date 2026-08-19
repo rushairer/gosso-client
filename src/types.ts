@@ -82,6 +82,9 @@ export interface PasskeyInfo {
 export interface ApiEnvelope<T> {
   data?: T;
   message?: string;
+  code?: number | string;
+  error?: string;
+  error_description?: string;
 }
 
 export interface RefreshLock {

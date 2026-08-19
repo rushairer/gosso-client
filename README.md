@@ -9,6 +9,8 @@ Browser SDK for Gosso OAuth/OIDC single-page application clients.
 - authenticated `apiFetch` with bearer headers and 401 retry
 - username/password login, MFA verification, and passkey login
 - profile, password, email, MFA, passkey, and session management APIs
+- password reset request and completion APIs
+- typed API errors for consistent consumer handling
 
 The package intentionally does not ship React UI. Build app-specific pages with your own design system and call the SDK methods underneath.
 
@@ -90,6 +92,9 @@ await gossoClient.confirmEmailChange(newEmail, code);
 const mfaStatus = await gossoClient.getMfaStatus();
 const passkeys = await gossoClient.listPasskeys();
 const sessions = await gossoClient.listSessions();
+
+await gossoClient.requestPasswordReset(email);
+await gossoClient.resetPassword(resetToken, newPassword);
 ```
 
 ## Configuration
@@ -125,6 +130,7 @@ Gosso's default lifetimes are independent: Access Token 15 minutes, Refresh Toke
 - Keep the Gosso issuer and app behind a same-origin gateway when possible.
 - Prefer `sessionMode: "cookie"`; access and refresh tokens then remain in `__Host-*` HttpOnly cookies and are never written to Web Storage.
 - Cookie Session refresh is single-flight within a page and coordinated across tabs with the Web Locks API. Only a non-sensitive refresh generation marker is stored in `localStorage`.
+- OAuth state and PKCE verifier generation requires Web Crypto and fails closed when a cryptographically secure random source is unavailable.
 
 ## License
 
