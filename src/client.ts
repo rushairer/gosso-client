@@ -12,7 +12,7 @@ import type {
   SessionSnapshot,
   TokenResponse,
   UserProfile,
-} from './types';
+} from './types.js';
 import {
   base64URLToBuffer,
   bufferToBase64URL,
@@ -28,14 +28,14 @@ import {
   readCookie,
   readRolesFromAccessToken,
   readScopeFromAccessToken,
-} from './utils';
+} from './utils.js';
 import {
   AuthenticationError,
   CsrfError,
   PasskeyError,
   TokenRefreshError,
-} from './errors';
-import { generateCodeChallenge } from './pkce';
+} from './errors.js';
+import { generateCodeChallenge } from './pkce.js';
 
 const REFRESH_LOCK_TTL_MS = 15_000;
 const REFRESH_WAIT_TIMEOUT_MS = 20_000;

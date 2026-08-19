@@ -13,7 +13,7 @@ export type {
   RefreshLock,
   BrowserLockManager,
   NavigatorWithLocks,
-} from './types';
+} from './types.js';
 
 export {
   GossoError,
@@ -22,7 +22,7 @@ export {
   CsrfError,
   CryptoError,
   PasskeyError,
-} from './errors';
+} from './errors.js';
 
 export {
   normalizeBaseUrl,
@@ -40,13 +40,13 @@ export {
   parseRefreshLock,
   generateRefreshOwner,
   parseJsonEnvelope,
-} from './utils';
+} from './utils.js';
 
-export { generateCodeChallenge } from './pkce';
+export { generateCodeChallenge } from './pkce.js';
 
 export {
   defaultConfig,
   createGossoClient,
-} from './client';
+} from './client.js';
 
-export type { GossoClient } from './client';
+export type { GossoClient } from './client.js';

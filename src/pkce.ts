@@ -1,5 +1,5 @@
-import { bufferToBase64URL } from './utils';
-import { CryptoError } from './errors';
+import { bufferToBase64URL } from './utils.js';
+import { CryptoError } from './errors.js';
 
 export async function generateCodeChallenge(verifier: string): Promise<string> {
   const data = new TextEncoder().encode(verifier);

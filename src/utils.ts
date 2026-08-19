@@ -1,5 +1,5 @@
-import type { ApiEnvelope, RefreshLock, UserProfile } from './types';
-import { GossoError } from './errors';
+import type { ApiEnvelope, RefreshLock, UserProfile } from './types.js';
+import { GossoError } from './errors.js';
 
 export function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
