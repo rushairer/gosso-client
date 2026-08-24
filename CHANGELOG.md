@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-24
+
+### Changed
+- Promote `0.4.0-rc.2` to `latest` without runtime code changes after Blog and Admin integration verification.
+
 ## [0.4.0-rc.2] - 2026-08-24
 
 ### Fixed
