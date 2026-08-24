@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.4.0-rc.1] - 2026-08-24
+
 ### Added
 - Add typed `ApiError` responses with HTTP status and stable error codes.
 - Add SDK-owned password reset request and completion methods.
