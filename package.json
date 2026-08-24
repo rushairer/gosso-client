@@ -1,6 +1,6 @@
 {
   "name": "@gosso/client",
-  "version": "0.4.0-dev.0",
+  "version": "0.4.0-rc.1",
   "description": "Browser SDK for Gosso OAuth/OIDC SPA clients.",
   "type": "module",
   "license": "MIT",
@@ -27,6 +27,8 @@
   "files": [
     "dist",
     "README.md",
+    "MIGRATING.md",
+    "SECURITY.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
@@ -41,14 +43,22 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "format": "prettier --write \"src/**/*.ts\" \"*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"*.ts\"",
+    "lint": "oxlint src",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "quality": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run build",
     "prepare": "npm run build",
     "prepack": "npm run build",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run quality && npm audit --omit=dev"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.9",
     "jsdom": "^29.1.1",
+    "oxlint": "1.69.0",
+    "prettier": "3.8.5",
     "typescript": "~6.0.2",
     "vitest": "^4.1.9"
   },
