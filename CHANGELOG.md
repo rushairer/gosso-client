@@ -9,12 +9,19 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Added
 - Add typed `ApiError` responses with HTTP status and stable error codes.
 - Add SDK-owned password reset request and completion methods.
+- Add exact `allowedApiOrigins` enforcement for authenticated requests.
+- Add a 0.4 migration guide and package provenance release workflow.
 
 ### Changed
 - Normalize Gouno, OAuth, empty, and invalid JSON API responses through the shared envelope parser.
+- Make HttpOnly Cookie Session the default when `sessionMode` is omitted.
+- Return a discriminated Cookie or legacy-token result from OAuth callbacks.
+- Keep explicit legacy token sessions in memory only; page reload requires reauthentication.
 
 ### Security
 - Fail closed when Web Crypto is unavailable instead of generating OAuth state and PKCE verifier values with `Math.random`.
+- Stop writing access and refresh tokens to Web Storage or JavaScript cookies.
+- Reject credentialed requests to untrusted origins and reject external or protocol-relative login/logout return paths.
 
 ## [0.3.0] - 2026-08-15
 ### Added

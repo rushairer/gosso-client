@@ -1,6 +1,9 @@
 export type {
   GossoClientConfig,
   TokenResponse,
+  CookieSessionResponse,
+  AuthenticationResult,
+  AuthCallbackResult,
   UserProfile,
   SessionSnapshot,
   SessionListener,
@@ -13,7 +16,7 @@ export type {
   RefreshLock,
   BrowserLockManager,
   NavigatorWithLocks,
-} from './types.js';
+} from "./types.js";
 
 export {
   GossoError,
@@ -23,15 +26,15 @@ export {
   CsrfError,
   CryptoError,
   PasskeyError,
-} from './errors.js';
+} from "./errors.js";
 
 export {
   normalizeBaseUrl,
   generateRandomString,
   bufferToBase64URL,
   base64URLToBuffer,
-  cookieSecureAttribute,
   getCookieName,
+  safeLocalPath,
   readCookie,
   CookieSessionRefreshError,
   readClaimsFromAccessToken,
@@ -41,13 +44,10 @@ export {
   parseRefreshLock,
   generateRefreshOwner,
   parseJsonEnvelope,
-} from './utils.js';
+} from "./utils.js";
 
-export { generateCodeChallenge } from './pkce.js';
+export { generateCodeChallenge } from "./pkce.js";
 
-export {
-  defaultConfig,
-  createGossoClient,
-} from './client.js';
+export { defaultConfig, createGossoClient } from "./client.js";
 
-export type { GossoClient } from './client.js';
+export type { GossoClient } from "./client.js";

@@ -7,7 +7,9 @@ export interface GossoClientConfig {
   loginPath: string;
   storagePrefix: string;
   /** Use HttpOnly Gosso cookies instead of exposing tokens to JavaScript. */
-  sessionMode?: 'token' | 'cookie';
+  sessionMode?: "token" | "cookie";
+  /** Additional exact origins that apiFetch may contact. */
+  allowedApiOrigins?: readonly string[];
   /** Same-origin endpoint returning {data:{sub,roles,scope}} for UI authorization. */
   sessionProfileEndpoint?: string;
   /** CSRF cookie used by same-origin application API requests in cookie session mode. */
@@ -25,6 +27,17 @@ export interface TokenResponse {
   id_token?: string;
   expires_in: number;
 }
+
+export interface CookieSessionResponse {
+  expires_in?: number;
+  scope?: string;
+}
+
+export type AuthenticationResult = TokenResponse | CookieSessionResponse;
+
+export type AuthCallbackResult =
+  | { sessionMode: "cookie"; redirectTo: string }
+  | { sessionMode: "token"; redirectTo: string; tokenSet: TokenResponse };
 
 export interface UserProfile {
   sub: string;
@@ -93,7 +106,11 @@ export interface RefreshLock {
 }
 
 export interface BrowserLockManager {
-  request<T>(name: string, options: { mode: 'exclusive' }, callback: () => T | Promise<T>): Promise<T>;
+  request<T>(
+    name: string,
+    options: { mode: "exclusive" },
+    callback: () => T | Promise<T>,
+  ): Promise<T>;
 }
 
 export type NavigatorWithLocks = Navigator & { locks?: BrowserLockManager };

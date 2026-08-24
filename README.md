@@ -5,8 +5,8 @@ Browser SDK for Gosso OAuth/OIDC single-page application clients.
 `@gosso/client` provides the protocol and account self-service layer for ordinary Gosso clients:
 
 - Authorization Code + PKCE redirects and callback handling
-- token storage, userinfo loading, logout, and automatic refresh
-- authenticated `apiFetch` with bearer headers and 401 retry
+- HttpOnly Cookie Session, userinfo loading, logout, and automatic refresh
+- origin-restricted authenticated `apiFetch` with CSRF handling and 401 retry
 - username/password login, MFA verification, and passkey login
 - profile, password, email, MFA, passkey, and session management APIs
 - password reset request and completion APIs
@@ -33,7 +33,6 @@ export const gossoClient = createGossoClient({
   postLoginDefaultPath: '/admin',
   loginPath: '/login',
   storagePrefix: 'my-app',
-  sessionMode: 'cookie',
   sessionProfileEndpoint: '/api/me/session',
   csrfCookieName: 'blog_csrf_token',
 });
@@ -109,6 +108,7 @@ interface GossoClientConfig {
   loginPath: string;
   storagePrefix: string;
   sessionMode?: 'token' | 'cookie';
+  allowedApiOrigins?: readonly string[];
   sessionProfileEndpoint?: string;
   csrfCookieName?: string;
   fetchImpl?: typeof fetch;
@@ -117,7 +117,13 @@ interface GossoClientConfig {
 }
 ```
 
-Use a unique `storagePrefix` for each SPA on the same origin to avoid token collisions.
+Cookie Session is the default when `sessionMode` is omitted. Use a unique
+`storagePrefix` for each SPA on the same origin to isolate transient PKCE,
+profile, and refresh-coordination state.
+
+`apiFetch` accepts the page origin and issuer origin by default. Add only exact,
+trusted HTTPS origins to `allowedApiOrigins`; credentials are rejected before a
+request is sent to any other origin.
 
 In Cookie Session mode, `csrfCookieName` belongs to the application API only. Gosso identity requests always use `__Host-csrf_token` on HTTPS, or `csrf_token` only for an HTTP development issuer. Cookie lookup is exact and never depends on `document.cookie` order.
 
@@ -128,9 +134,11 @@ Gosso's default lifetimes are independent: Access Token 15 minutes, Refresh Toke
 - Use Authorization Code + PKCE for browser clients.
 - Serve production clients over HTTPS.
 - Keep the Gosso issuer and app behind a same-origin gateway when possible.
-- Prefer `sessionMode: "cookie"`; access and refresh tokens then remain in `__Host-*` HttpOnly cookies and are never written to Web Storage.
+- Cookie Session is the secure default; access and refresh tokens remain in server-set `__Host-*` HttpOnly cookies and are never written by the SDK to Web Storage or JavaScript cookies.
+- Explicit `sessionMode: "token"` is a legacy, tab-local mode. Tokens stay in memory, disappear on reload, and are sent only to configured origins.
 - Cookie Session refresh is single-flight within a page and coordinated across tabs with the Web Locks API. Only a non-sensitive refresh generation marker is stored in `localStorage`.
 - OAuth state and PKCE verifier generation requires Web Crypto and fails closed when a cryptographically secure random source is unavailable.
+- Login and logout return locations must be application-local paths. See [MIGRATING.md](./MIGRATING.md) before upgrading from 0.3 or earlier.
 
 ## License
 
