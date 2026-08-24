@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.4.0-rc.2] - 2026-08-24
+
+### Fixed
+- Correct the release workflow's tag-to-package version validation before its first npm publish attempt.
+
 ## [0.4.0-rc.1] - 2026-08-24
 
 ### Added
