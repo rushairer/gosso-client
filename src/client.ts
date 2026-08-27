@@ -956,6 +956,22 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     return data.backup_codes || [];
   };
 
+  const stepUpMfa = async (
+    code: string,
+    type: "totp" | "backup_code" = "totp",
+  ): Promise<{ access_token?: string; auth_time: number; amr: string[] }> => {
+    const response = await apiFetch(`${config.issuer}/api/v1/auth/mfa/step-up`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, type }),
+    });
+    return parseJsonEnvelope<{
+      access_token?: string;
+      auth_time: number;
+      amr: string[];
+    }>(response, "Failed to complete step-up MFA");
+  };
+
   const listPasskeys = async (): Promise<PasskeyInfo[]> => {
     const response = await apiFetch(`${config.issuer}/api/v1/passkeys`);
     return parseJsonEnvelope<PasskeyInfo[]>(
@@ -1100,6 +1116,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     activateMfa,
     disableMfa,
     generateBackupCodes,
+    stepUpMfa,
     listPasskeys,
     registerPasskey,
     deletePasskey,
