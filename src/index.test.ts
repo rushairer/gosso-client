@@ -781,5 +781,23 @@ describe("@gosso/client", () => {
         TokenRefreshError,
       );
     });
+
+    it("completes step-up MFA without access_token in cookie session mode", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(
+        jsonResponse({
+          code: 200,
+          data: {
+            auth_time: 1724774400,
+            amr: ["pwd", "otp"],
+            expires_in: 900,
+          },
+        }),
+      );
+      const client = createCookieClient(fetchImpl);
+      const res = await client.stepUpMfa("123456", "totp");
+      expect(res.auth_time).toBe(1724774400);
+      expect(res.amr).toEqual(["pwd", "otp"]);
+      expect(res.access_token).toBeUndefined();
+    });
   });
 });
