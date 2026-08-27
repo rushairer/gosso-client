@@ -10,8 +10,8 @@ export default defineConfig({
     },
     coverage: {
       reporter: ["text", "json", "html"],
-      include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.{test,spec}.{ts,tsx}"],
       thresholds: {
         statements: 73,
         branches: 64,

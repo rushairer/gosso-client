@@ -960,11 +960,14 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     code: string,
     type: "totp" | "backup_code" = "totp",
   ): Promise<{ access_token?: string; auth_time: number; amr: string[] }> => {
-    const response = await apiFetch(`${config.issuer}/api/v1/auth/mfa/step-up`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, type }),
-    });
+    const response = await apiFetch(
+      `${config.issuer}/api/v1/auth/mfa/step-up`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, type }),
+      },
+    );
     return parseJsonEnvelope<{
       access_token?: string;
       auth_time: number;
