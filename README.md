@@ -11,8 +11,10 @@ Browser SDK for Gosso OAuth/OIDC single-page application clients.
 - profile, password, email, MFA, passkey, and session management APIs
 - password reset request and completion APIs
 - typed API errors for consistent consumer handling
+- Step-up MFA for sensitive operations
+- optional headless React provider, hooks, and callback component
 
-The package intentionally does not ship React UI. Build app-specific pages with your own design system and call the SDK methods underneath.
+The package intentionally does not ship styled React UI. Build app-specific pages with your own design system and use either the framework-neutral client or the optional headless React bindings underneath.
 
 ## Install
 
@@ -79,6 +81,39 @@ if (result.requires_mfa) {
 ```ts
 await gossoClient.loginWithPasskey();
 ```
+
+Require fresh MFA before a sensitive operation (Gosso 1.3.0 or newer):
+
+```ts
+await gossoClient.stepUpMfa(code, 'totp');
+```
+
+## React Bindings
+
+React applications can import the optional bindings from the dedicated
+subpath. React remains an optional peer dependency for non-React consumers.
+
+```tsx
+import { GossoProvider, useIsAuthenticated, useUserProfile } from '@gosso/client/react';
+import { gossoClient } from './auth';
+
+function App() {
+  return (
+    <GossoProvider client={gossoClient}>
+      <AccountSummary />
+    </GossoProvider>
+  );
+}
+
+function AccountSummary() {
+  const authenticated = useIsAuthenticated();
+  const profile = useUserProfile();
+  return authenticated ? <span>{profile?.name}</span> : null;
+}
+```
+
+Use `AuthCallback` for the OAuth callback route, and `useMfa`, `usePasskeys`,
+`useSessions`, and `useProfileManager` for SDK-owned account state and actions.
 
 ## Account Settings
 

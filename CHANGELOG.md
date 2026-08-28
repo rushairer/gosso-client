@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-28
+
+### Added
+- Add `stepUpMfa()` for obtaining freshly authenticated claims before sensitive operations, including Cookie Session-safe responses that keep access tokens out of JavaScript.
+- Add optional headless React bindings under `@gosso/client/react`, including `GossoProvider`, session and authorization hooks, account-management hooks, and an `AuthCallback` component.
+
+### Changed
+- Make the React peer dependency optional so non-React consumers continue to install only the framework-neutral SDK.
+
 ## [0.4.0] - 2026-08-24
 
 ### Changed
