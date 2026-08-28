@@ -2,6 +2,30 @@ import React, { useEffect } from "react";
 import { useGossoClient, useSession } from "./context.js";
 import type { SessionSnapshot, UserProfile } from "../types.js";
 
+const pendingAuthRedirects = new WeakMap<object, Map<string, Promise<void>>>();
+
+function redirectToAuthorizeOnce(
+  client: { redirectToAuthorize: (returnTo?: string) => Promise<void> },
+  returnTo: string,
+) {
+  let redirects = pendingAuthRedirects.get(client);
+  if (!redirects) {
+    redirects = new Map();
+    pendingAuthRedirects.set(client, redirects);
+  }
+  const existing = redirects.get(returnTo);
+  if (existing) return existing;
+  const pending = client.redirectToAuthorize(returnTo);
+  redirects.set(returnTo, pending);
+  const release = () => {
+    window.setTimeout(() => {
+      if (redirects?.get(returnTo) === pending) redirects.delete(returnTo);
+    }, 0);
+  };
+  void pending.then(release, release);
+  return pending;
+}
+
 export interface RequireAuthOptions<TProfile = UserProfile> {
   redirectTo?: string;
   roles?: string[];
@@ -48,7 +72,7 @@ export function useRequireAuth<TProfile = UserProfile>(
       const returnTo =
         options.redirectTo ??
         `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      void client.redirectToAuthorize(returnTo);
+      void redirectToAuthorizeOnce(client, returnTo);
     }
   }, [client, loggedIn, options.redirectTo]);
 

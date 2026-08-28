@@ -396,14 +396,18 @@ describe("@gosso/client/react", () => {
         <GossoProvider client={client}>
           <AuthCallback
             onSuccess={onSuccess}
-            renderError={(err) => <div>Custom Error: {err}</div>}
+            renderError={(err, detail) => (
+              <div>
+                Custom Error: {detail?.code}: {err}
+              </div>
+            )}
           />
         </GossoProvider>,
       );
 
       expect(
         await screen.findByText(
-          "Custom Error: Missing authorization code or state parameter",
+          "Custom Error: CALLBACK_PARAMS_MISSING: Missing authorization code or state parameter",
         ),
       ).toBeDefined();
       expect(onSuccess).not.toHaveBeenCalled();
@@ -581,6 +585,48 @@ describe("@gosso/client/react", () => {
 
     expect(screen.getByText("LoggedIn: no")).toBeDefined();
     expect(renderCount).toBeLessThan(3);
+  });
+
+  it("initializes once before mounting guards, including in StrictMode", async () => {
+    let resolveInitialization!: () => void;
+    const initialization = new Promise<void>((resolve) => {
+      resolveInitialization = resolve;
+    });
+    const unauthSnapshot: SessionSnapshot = {
+      accessToken: null,
+      refreshToken: null,
+      profile: null,
+      loggedIn: false,
+      isAdmin: false,
+    };
+    const client = createMockClient({
+      getSnapshot: vi.fn(() => unauthSnapshot),
+      initializeSession: vi.fn(() => initialization as any),
+      redirectToAuthorize: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(
+      <React.StrictMode>
+        <GossoProvider
+          client={client}
+          initializeSession
+          fallback={<div>Restoring session</div>}
+        >
+          <RequireAuth fallback={<div>Redirecting</div>}>
+            <div>Protected</div>
+          </RequireAuth>
+        </GossoProvider>
+      </React.StrictMode>,
+    );
+
+    expect(screen.getByText("Restoring session")).toBeDefined();
+    expect(client.initializeSession).toHaveBeenCalledTimes(1);
+    expect(client.redirectToAuthorize).not.toHaveBeenCalled();
+
+    await act(async () => resolveInitialization());
+
+    expect(screen.getByText("Redirecting")).toBeDefined();
+    expect(client.redirectToAuthorize).toHaveBeenCalledTimes(1);
   });
 
   it("RequireAuth, RequireAdmin and useRequireAuth protect routes and trigger redirectToAuthorize", async () => {

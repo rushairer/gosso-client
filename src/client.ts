@@ -91,6 +91,9 @@ export function createGossoClient<TProfile = UserProfile>(
   };
 
   let refreshPromise: Promise<string> | null = null;
+  let sessionInitializationPromise: Promise<SessionSnapshot<TProfile>> | null =
+    null;
+  let sessionInitialized = false;
   let memoryTokenSet: TokenResponse | null = null;
   let tokenIssuedAt = 0;
   const sessionListeners = new Set<SessionListener<TProfile>>();
@@ -441,6 +444,10 @@ export function createGossoClient<TProfile = UserProfile>(
         throw new AuthenticationError(
           "Failed to fetch user profile",
           "USER_PROFILE_FAILED",
+          {
+            identityStatus: identity.status,
+            sessionStatus: session?.status,
+          },
         );
       const data = (await identity.json()) as TProfile;
       if (session)
@@ -668,6 +675,82 @@ export function createGossoClient<TProfile = UserProfile>(
       tokenSet: tokenSet as TokenResponse,
       redirectTo,
     };
+  };
+
+  /**
+   * Restores the SDK's local session view from an existing browser session.
+   * Cookie sessions may outlive sessionStorage, so consumers should initialize
+   * once before mounting authentication guards in a new tab.
+   */
+  const initializeSession = async (): Promise<SessionSnapshot<TProfile>> => {
+    if (sessionInitialized || getSnapshot().profile) {
+      sessionInitialized = true;
+      return getSnapshot();
+    }
+    if (sessionInitializationPromise) return sessionInitializationPromise;
+
+    const pending = (async () => {
+      const callbackParams = new URLSearchParams(window.location.search);
+      if (
+        flowStorage.getItem(storageKeys.authState) &&
+        callbackParams.has("code") &&
+        callbackParams.has("state")
+      ) {
+        sessionInitialized = true;
+        return getSnapshot();
+      }
+      if (!cookieSession && !getAccessToken()) {
+        sessionInitialized = true;
+        return getSnapshot();
+      }
+
+      try {
+        await fetchUserProfile();
+      } catch (error) {
+        const cause =
+          error instanceof AuthenticationError &&
+          error.code === "USER_PROFILE_FAILED" &&
+          error.cause &&
+          typeof error.cause === "object"
+            ? (error.cause as {
+                identityStatus?: number;
+                sessionStatus?: number;
+              })
+            : null;
+        const unauthorized =
+          cause?.identityStatus === 401 || cause?.sessionStatus === 401;
+        if (!cookieSession || !unauthorized) throw error;
+
+        try {
+          await refreshAccessToken();
+          await fetchUserProfile();
+        } catch (refreshError) {
+          if (
+            refreshError instanceof TokenRefreshError ||
+            refreshError instanceof CookieSessionRefreshError ||
+            (refreshError instanceof AuthenticationError &&
+              refreshError.code === "USER_PROFILE_FAILED")
+          ) {
+            clear();
+            sessionInitialized = true;
+            return getSnapshot();
+          }
+          throw refreshError;
+        }
+      }
+
+      sessionInitialized = true;
+      return getSnapshot();
+    })();
+
+    sessionInitializationPromise = pending;
+    try {
+      return await pending;
+    } finally {
+      if (sessionInitializationPromise === pending) {
+        sessionInitializationPromise = null;
+      }
+    }
   };
 
   const logout = async (redirectTo = "/") => {
@@ -1139,6 +1222,7 @@ export function createGossoClient<TProfile = UserProfile>(
     redirectToAuthorize,
     exchangeCodeForToken,
     handleRedirectCallback,
+    initializeSession,
     fetchUserProfile,
     refreshAccessToken,
     apiFetch,

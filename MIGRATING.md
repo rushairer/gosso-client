@@ -1,3 +1,25 @@
+# Migrating to 0.8
+
+Version 0.8 adds opt-in restoration for Cookie Sessions that exist without a
+profile in the current tab's `sessionStorage`. Enable it at the React root so
+authentication guards wait for the SDK to probe and, when necessary, refresh
+the HttpOnly session:
+
+```tsx
+<GossoProvider client={gossoClient} initializeSession fallback={null}>
+  <App />
+</GossoProvider>
+```
+
+Framework-neutral clients can call `await gossoClient.initializeSession()`
+before reading the initial snapshot. Existing providers remain unchanged until
+`initializeSession` is explicitly enabled.
+
+`AuthCallback.renderError` still receives the human-readable message as its
+first argument. Its optional second argument now contains a stable `code`,
+`message`, and optional `cause`; use the code for localization instead of
+matching English text.
+
 # Migrating to 0.5
 
 Version 0.5 adds optional headless React bindings and Step-up MFA. Existing

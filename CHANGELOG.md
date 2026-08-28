@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-28
+
+### Added
+- Add opt-in Cookie Session restoration through `client.initializeSession()` and `GossoProvider initializeSession`, including refresh recovery before authentication guards mount.
+- Add stable callback error details to `AuthCallback.renderError` while preserving the existing string argument.
+
 ## [0.7.0] - 2026-08-28
 
 ### Added

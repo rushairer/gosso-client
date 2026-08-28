@@ -99,7 +99,7 @@ import { gossoClient } from './auth';
 
 function App() {
   return (
-    <GossoProvider client={gossoClient}>
+    <GossoProvider client={gossoClient} initializeSession fallback={null}>
       <AccountSummary />
     </GossoProvider>
   );
@@ -114,6 +114,20 @@ function AccountSummary() {
 
 Use `AuthCallback` for the OAuth callback route, and `useMfa`, `usePasskeys`,
 `useSessions`, and `useProfileManager` for SDK-owned account state and actions.
+Enabling `initializeSession` makes guards wait while the provider restores an
+existing HttpOnly Cookie Session in tabs that do not yet have a cached profile.
+
+Callback error renderers can localize by stable error code without matching the
+default English message:
+
+```tsx
+<AuthCallback
+  onSuccess={(path) => navigate(path)}
+  renderError={(message, detail) => (
+    <p>{detail?.code === 'CALLBACK_PARAMS_MISSING' ? 'Invalid callback' : message}</p>
+  )}
+/>
+```
 
 ## Account Settings
 

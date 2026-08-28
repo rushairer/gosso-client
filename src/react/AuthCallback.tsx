@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useGossoClient } from "./context.js";
 import type { AuthCallbackResult } from "../types.js";
+import { AuthenticationError, GossoError } from "../errors.js";
+
+export interface AuthCallbackErrorDetail {
+  code: string;
+  message: string;
+  cause?: unknown;
+}
 
 export interface AuthCallbackProps {
   /**
@@ -14,7 +21,10 @@ export interface AuthCallbackProps {
   /**
    * Optional custom error component renderer.
    */
-  renderError?: (error: string) => React.ReactNode;
+  renderError?: (
+    error: string,
+    detail?: AuthCallbackErrorDetail,
+  ) => React.ReactNode;
 }
 
 /**
@@ -28,7 +38,7 @@ export function AuthCallback({
   renderError,
 }: AuthCallbackProps) {
   const client = useGossoClient();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AuthCallbackErrorDetail | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -36,7 +46,11 @@ export function AuthCallback({
     const state = params.get("state");
 
     if (!code || !state) {
-      setError("Missing authorization code or state parameter");
+      const callbackError = new AuthenticationError(
+        "Missing authorization code or state parameter",
+        "CALLBACK_PARAMS_MISSING",
+      );
+      setError(callbackError);
       return;
     }
 
@@ -50,9 +64,16 @@ export function AuthCallback({
       })
       .catch((err: unknown) => {
         if (active) {
-          const message =
-            err instanceof Error ? err.message : "Authentication failed";
-          setError(message);
+          if (err instanceof GossoError) {
+            setError(err);
+          } else {
+            setError({
+              code: "AUTH_CALLBACK_FAILED",
+              message:
+                err instanceof Error ? err.message : "Authentication failed",
+              cause: err,
+            });
+          }
         }
       });
 
@@ -63,11 +84,11 @@ export function AuthCallback({
 
   if (error) {
     return renderError ? (
-      <>{renderError(error)}</>
+      <>{renderError(error.message, error)}</>
     ) : (
       <div role="alert" style={{ textAlign: "center", padding: "2rem" }}>
         <h2>Authentication Error</h2>
-        <p>{error}</p>
+        <p>{error.message}</p>
       </div>
     );
   }

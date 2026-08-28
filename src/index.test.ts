@@ -722,6 +722,113 @@ describe("@gosso/client", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("initializes a cookie session from existing HttpOnly credentials", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ sub: "user-1", preferred_username: "aben" }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { roles: ["admin"], permissions: ["manage"] } }),
+      );
+    const client = createCookieClient(fetchMock);
+
+    const snapshot = await client.initializeSession();
+
+    expect(snapshot.loggedIn).toBe(true);
+    expect(snapshot.profile).toMatchObject({
+      sub: "user-1",
+      roles: ["admin"],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a cached profile without probing the cookie session", async () => {
+    sessionStorage.setItem(
+      "cookie-test:user_profile",
+      JSON.stringify({ sub: "cached-user", roles: ["admin"] }),
+    );
+    const fetchMock = vi.fn();
+    const client = createCookieClient(fetchMock);
+
+    const snapshot = await client.initializeSession();
+
+    expect(snapshot.profile).toMatchObject({ sub: "cached-user" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an expired cookie session before restoring the profile", async () => {
+    document.cookie = "__Host-csrf_token=gosso-value; path=/; Secure";
+    const fetchMock = vi.fn(async (url: string) => {
+      const callsForURL = fetchMock.mock.calls.filter(
+        ([value]) => String(value) === String(url),
+      ).length;
+      if (url.endsWith("/oidc/userinfo")) {
+        return callsForURL === 1
+          ? new Response(null, { status: 401 })
+          : jsonResponse({ sub: "restored-user" });
+      }
+      if (url === "/api/me/session") {
+        return callsForURL === 1
+          ? new Response(null, { status: 401 })
+          : jsonResponse({ data: { roles: ["admin"] } });
+      }
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return jsonResponse({ expires_in: 900 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    const client = createCookieClient(fetchMock);
+
+    const snapshot = await client.initializeSession();
+
+    expect(snapshot.loggedIn).toBe(true);
+    expect(snapshot.profile).toMatchObject({
+      sub: "restored-user",
+      roles: ["admin"],
+    });
+    expect(
+      fetchMock.mock.calls.filter(([url]) =>
+        String(url).endsWith("/api/v1/auth/refresh"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("settles as unauthenticated when cookie session refresh is rejected", async () => {
+    document.cookie = "__Host-csrf_token=gosso-value; path=/; Secure";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/oidc/userinfo") || url === "/api/me/session") {
+        return new Response(null, { status: 401 });
+      }
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return new Response(null, { status: 401 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    const client = createCookieClient(fetchMock);
+
+    const snapshot = await client.initializeSession();
+
+    expect(snapshot.loggedIn).toBe(false);
+    expect(snapshot.profile).toBeNull();
+  });
+
+  it("coalesces concurrent session initialization", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ sub: "user-1" }))
+      .mockResolvedValueOnce(jsonResponse({ data: { roles: ["admin"] } }));
+    const client = createCookieClient(fetchMock);
+
+    const [first, second] = await Promise.all([
+      client.initializeSession(),
+      client.initializeSession(),
+    ]);
+
+    expect(first).toBe(second);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   describe("Typed Error Hierarchy", () => {
     it("properly instantiates all typed SDK error subclasses with code and name", () => {
       const baseErr = new GossoError("base message", "BASE_CODE");
