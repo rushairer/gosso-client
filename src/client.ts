@@ -1386,6 +1386,54 @@ export function createGossoClient<TProfile = UserProfile>(
         (res) => parseJsonEnvelope<T>(res, "DELETE request failed"),
       );
     },
+    getBlob: (url: string, init?: RequestOptions): Promise<Blob> => {
+      const { params, ...fetchInit } = init || {};
+      const targetUrl = appendQueryParams(url, params);
+      return apiFetch(targetUrl, { ...fetchInit, method: "GET" }).then(
+        async (res) => {
+          if (!res.ok) {
+            await parseJsonEnvelope<void>(res, "GET blob request failed");
+          }
+          return res.blob();
+        },
+      );
+    },
+    postBlob: (
+      url: string,
+      body?: unknown,
+      init: RequestOptions = {},
+    ): Promise<Blob> => {
+      const { params, ...fetchInit } = init;
+      const targetUrl = appendQueryParams(url, params);
+      const headers = new Headers(fetchInit.headers || {});
+      let payloadBody = fetchInit.body;
+      if (body !== undefined && payloadBody === undefined) {
+        if (
+          typeof body === "string" ||
+          body instanceof FormData ||
+          body instanceof URLSearchParams ||
+          body instanceof Blob
+        ) {
+          payloadBody = body;
+        } else {
+          if (!headers.has("Content-Type")) {
+            headers.set("Content-Type", "application/json");
+          }
+          payloadBody = JSON.stringify(body);
+        }
+      }
+      return apiFetch(targetUrl, {
+        ...fetchInit,
+        method: "POST",
+        headers,
+        body: payloadBody,
+      }).then(async (res) => {
+        if (!res.ok) {
+          await parseJsonEnvelope<void>(res, "POST blob request failed");
+        }
+        return res.blob();
+      });
+    },
   };
 }
 

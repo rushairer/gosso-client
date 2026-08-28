@@ -968,5 +968,48 @@ describe("@gosso/client", () => {
         "/api/items?filter=active&sort=desc",
       );
     });
+
+    it("performs getBlob and postBlob returning Blob objects and handles error envelope", async () => {
+      const fetchImpl = vi.fn().mockImplementation((url) => {
+        const path = String(url);
+        if (path.includes("/api/error")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                code: 404,
+                message: "Resource not found",
+              }),
+              {
+                status: 404,
+                headers: { "Content-Type": "application/json" },
+              },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response("binary content", {
+            status: 200,
+            headers: { "Content-Type": "application/octet-stream" },
+          }),
+        );
+      });
+      const client = createCookieClient(fetchImpl);
+
+      const blob = await client.getBlob("/api/export", {
+        params: { format: "csv" },
+      });
+      expect(blob.size).toBe(14);
+      expect(await blob.text()).toBe("binary content");
+
+      const postBlobRes = await client.postBlob("/api/export-custom", {
+        ids: [1, 2],
+      });
+      expect(postBlobRes.size).toBe(14);
+      expect(await postBlobRes.text()).toBe("binary content");
+
+      await expect(client.getBlob("/api/error")).rejects.toThrow(
+        "Resource not found",
+      );
+    });
   });
 });

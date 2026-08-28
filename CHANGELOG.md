@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-28
+
+### Added
+- Add `client.getBlob()` and `client.postBlob()` methods for binary / file export responses with automatic CSRF token management, 401 retry, and standard error envelope parsing.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added
