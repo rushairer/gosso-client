@@ -276,7 +276,7 @@ describe("@gosso/client/react", () => {
       </GossoProvider>,
     );
 
-    expect(await screen.findByTestId("current")).toBeDefined();
+    expect(await screen.findByText("sess-1")).toBeDefined();
     expect(screen.getByTestId("current").textContent).toBe("sess-1");
 
     await act(async () => {
