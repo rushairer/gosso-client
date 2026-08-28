@@ -737,6 +737,13 @@ export function createGossoClient<TProfile = UserProfile>(
       JSON.stringify({ at: now, returnTo, count }),
     );
 
+    if (config.authorizeEndpoint) {
+      const authUrl = resolveRequestURL(config.authorizeEndpoint);
+      authUrl.searchParams.set("return_to", returnTo);
+      window.location.href = authUrl.toString();
+      return;
+    }
+
     const verifier = generateRandomString(64);
     const state = generateRandomString(16);
     flowStorage.setItem(storageKeys.pkceVerifier, verifier);
@@ -905,6 +912,49 @@ export function createGossoClient<TProfile = UserProfile>(
   };
 
   const logout = async (redirectTo = "/") => {
+    if (config.logoutEndpoint) {
+      try {
+        const csrfToken = config.csrfCookieName
+          ? readCookie(config.csrfCookieName) || ""
+          : readIdentityCSRFToken() || "";
+        const target = resolveRequestURL(config.logoutEndpoint);
+        const headers: Record<string, string> = {};
+        if (csrfToken) {
+          headers["X-CSRF-Token"] = csrfToken;
+        }
+        const resp = await fetcher(target.toString(), {
+          method: "POST",
+          headers,
+          credentials: credentialsFor(target),
+          keepalive: true,
+        });
+        if (!resp.ok) {
+          throw new AuthenticationError(
+            `Logout failed (${resp.status})`,
+            "LOGOUT_FAILED",
+          );
+        }
+        try {
+          const data = (await resp.json()) as { logout_url?: string };
+          if (data?.logout_url) {
+            clear();
+            window.location.href = data.logout_url;
+            return;
+          }
+        } catch {
+          // ignore non-json response
+        }
+      } catch (e) {
+        if (e instanceof AuthenticationError && e.code === "LOGOUT_FAILED") {
+          throw e;
+        }
+        console.error("[@gosso/client] Logout endpoint error", e);
+      }
+      clear();
+      window.location.href = safeLocalPath(redirectTo, "/");
+      return;
+    }
+
     if (cookieSession) {
       const csrf = await ensureIdentityCSRFToken();
       const response = await fetcher(`${config.issuer}/api/v1/auth/logout`, {

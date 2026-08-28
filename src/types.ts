@@ -12,6 +12,10 @@ export interface GossoClientConfig<TProfile = UserProfile> {
   allowedApiOrigins?: readonly string[];
   /** Same-origin endpoint returning {data:{sub,roles,scope}} for UI authorization. */
   sessionProfileEndpoint?: string;
+  /** Same-origin endpoint to initiate login authorization flow (e.g. BFF "/api/auth/login"). */
+  authorizeEndpoint?: string;
+  /** Same-origin endpoint to perform session logout (e.g. BFF "/api/auth/logout"). */
+  logoutEndpoint?: string;
   /** CSRF cookie used by same-origin application API requests in cookie session mode. */
   csrfCookieName?: string;
   /** Refresh a Cookie Session after a 401 from protected GOSSO APIs as well. */
