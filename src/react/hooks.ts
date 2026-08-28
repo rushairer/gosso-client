@@ -407,3 +407,69 @@ export function useHasRole<TProfile = UserProfile>(role: string): boolean {
   } | null;
   return Array.isArray(profile?.roles) && profile.roles.includes(role);
 }
+
+export interface AccountSecurityHub<TProfile = UserProfile> {
+  profile: TProfile | null;
+  profileManager: ReturnType<typeof useProfileManager>;
+  mfa: ReturnType<typeof useMfa>;
+  passkeys: ReturnType<typeof usePasskeys>;
+  sessions: ReturnType<typeof useSessions>;
+  loading: boolean;
+  error: string | null;
+  refreshAll: () => Promise<void>;
+}
+
+/**
+ * Composite hook aggregating profile management, MFA, Passkeys, and active sessions,
+ * with unified loading, error states, and a single refreshAll action.
+ */
+export function useAccountSecurityHub<
+  TProfile = UserProfile,
+>(): AccountSecurityHub<TProfile> {
+  const client = useGossoClient<TProfile>();
+  const profile = useUserProfile<TProfile>();
+  const profileManager = useProfileManager();
+  const mfa = useMfa();
+  const passkeys = usePasskeys();
+  const sessions = useSessions();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        client.fetchUserProfile(),
+        mfa.reload(),
+        passkeys.reload(),
+        sessions.reload(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [client, mfa, passkeys, sessions]);
+
+  const loading =
+    refreshing ||
+    profileManager.loading ||
+    mfa.loading ||
+    passkeys.loading ||
+    sessions.loading;
+
+  const error =
+    profileManager.error ||
+    mfa.error ||
+    passkeys.error ||
+    sessions.error ||
+    null;
+
+  return {
+    profile,
+    profileManager,
+    mfa,
+    passkeys,
+    sessions,
+    loading,
+    error,
+    refreshAll,
+  };
+}

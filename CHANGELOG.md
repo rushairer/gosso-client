@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-08-28
+
+### Added
+- Add `useAccountSecurityHub()` hook and `AccountSecurityHub` interface in `@gosso/client/react` for composite account security state management (Profile, MFA, Passkeys, Sessions) with unified loading, error handling, and `refreshAll`.
+
 ## [0.8.1] - 2026-08-28
 
 ### Added

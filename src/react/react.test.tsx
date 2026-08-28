@@ -12,6 +12,7 @@ import {
   useMfa,
   useSessions,
   useProfileManager,
+  useAccountSecurityHub,
   usePermissions,
   useHasPermission,
   useHasAnyPermission,
@@ -880,5 +881,87 @@ describe("@gosso/client/react", () => {
     expect(screen.getByTestId("has-none").textContent).toBe("no");
     expect(screen.getByTestId("is-editor").textContent).toBe("yes");
     expect(screen.getByTestId("is-admin").textContent).toBe("no");
+  });
+
+  it("useAccountSecurityHub aggregates loading and sub-hook state and reloads all", async () => {
+    const client = createMockClient({
+      fetchUserProfile: vi.fn().mockResolvedValue({
+        sub: "user-123",
+        preferred_username: "alice",
+      }),
+      getMfaStatus: vi
+        .fn()
+        .mockResolvedValue({ enabled: true, types: ["totp"] }),
+      listPasskeys: vi
+        .fn()
+        .mockResolvedValue([
+          { id: "pk-1", name: "Key 1", created_at: "2026-08-01" },
+        ]),
+      listSessions: vi.fn().mockResolvedValue([
+        {
+          id: "s-1",
+          ip: "127.0.0.1",
+          user_agent: "Browser",
+          created_at: "2026-08-01",
+          last_active_at: "2026-08-01",
+          expires_at: "2026-08-02",
+        },
+      ]),
+      getCurrentSession: vi.fn().mockResolvedValue(null),
+    });
+
+    function TestHub() {
+      const hub = useAccountSecurityHub();
+      return (
+        <div>
+          <span data-testid="profile-user">
+            {hub.profile?.preferred_username || "none"}
+          </span>
+          <span data-testid="mfa-enabled">
+            {hub.mfa.status.enabled ? "yes" : "no"}
+          </span>
+          <span data-testid="passkeys-count">
+            {hub.passkeys.passkeys.length}
+          </span>
+          <span data-testid="sessions-count">
+            {hub.sessions.sessions.length}
+          </span>
+          <span data-testid="hub-loading">{hub.loading ? "yes" : "no"}</span>
+          <span data-testid="hub-error">{hub.error || "none"}</span>
+          <button
+            data-testid="refresh-btn"
+            onClick={() => void hub.refreshAll()}
+          >
+            Refresh All
+          </button>
+        </div>
+      );
+    }
+
+    render(
+      <GossoProvider client={client}>
+        <TestHub />
+      </GossoProvider>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("profile-user").textContent).toBe("alice");
+    expect(screen.getByTestId("mfa-enabled").textContent).toBe("yes");
+    expect(screen.getByTestId("passkeys-count").textContent).toBe("1");
+    expect(screen.getByTestId("sessions-count").textContent).toBe("1");
+    expect(screen.getByTestId("hub-loading").textContent).toBe("no");
+    expect(screen.getByTestId("hub-error").textContent).toBe("none");
+
+    await act(async () => {
+      screen.getByTestId("refresh-btn").click();
+    });
+
+    expect(client.fetchUserProfile).toHaveBeenCalled();
+    expect(client.getMfaStatus).toHaveBeenCalled();
+    expect(client.listPasskeys).toHaveBeenCalled();
+    expect(client.listSessions).toHaveBeenCalled();
   });
 });
