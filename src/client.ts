@@ -119,6 +119,7 @@ export function createGossoClient<TProfile = UserProfile>(
     cookieSession ? null : memoryTokenSet?.refresh_token || null;
 
   let cachedSnapshot: SessionSnapshot<TProfile> | null = null;
+  let isLoggingOut = false;
 
   const computeSnapshot = (): SessionSnapshot<TProfile> => {
     const accessToken = getAccessToken();
@@ -698,6 +699,7 @@ export function createGossoClient<TProfile = UserProfile>(
   };
 
   const redirectToAuthorize = async (customRedirectUri?: string) => {
+    if (isLoggingOut) return;
     const returnTo = safeLocalPath(
       customRedirectUri,
       config.postLoginDefaultPath,
@@ -912,6 +914,7 @@ export function createGossoClient<TProfile = UserProfile>(
   };
 
   const logout = async (redirectTo = "/") => {
+    isLoggingOut = true;
     if (config.logoutEndpoint) {
       try {
         const csrfToken = config.csrfCookieName
@@ -929,6 +932,7 @@ export function createGossoClient<TProfile = UserProfile>(
           keepalive: true,
         });
         if (!resp.ok) {
+          isLoggingOut = false;
           throw new AuthenticationError(
             `Logout failed (${resp.status})`,
             "LOGOUT_FAILED",
@@ -938,7 +942,7 @@ export function createGossoClient<TProfile = UserProfile>(
           const data = (await resp.json()) as { logout_url?: string };
           if (data?.logout_url) {
             clear();
-            window.location.href = data.logout_url;
+            window.location.replace(data.logout_url);
             return;
           }
         } catch {
@@ -946,12 +950,13 @@ export function createGossoClient<TProfile = UserProfile>(
         }
       } catch (e) {
         if (e instanceof AuthenticationError && e.code === "LOGOUT_FAILED") {
+          isLoggingOut = false;
           throw e;
         }
         console.error("[@gosso/client] Logout endpoint error", e);
       }
       clear();
-      window.location.href = safeLocalPath(redirectTo, "/");
+      window.location.replace(safeLocalPath(redirectTo, "/"));
       return;
     }
 
@@ -1420,6 +1425,7 @@ export function createGossoClient<TProfile = UserProfile>(
     saveTokenSet,
     clear,
     logout,
+    isLoggingOut: () => isLoggingOut,
     redirectToAuthorize,
     exchangeCodeForToken,
     handleRedirectCallback,

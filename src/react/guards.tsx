@@ -68,7 +68,10 @@ export function useRequireAuth<TProfile = UserProfile>(
     loggedIn && rolesSatisfied && permissionsSatisfied && predicateSatisfied;
 
   useEffect(() => {
-    if (!loggedIn) {
+    if (
+      !loggedIn &&
+      !(client as { isLoggingOut?: () => boolean }).isLoggingOut?.()
+    ) {
       const returnTo =
         options.redirectTo ??
         `${window.location.pathname}${window.location.search}${window.location.hash}`;
