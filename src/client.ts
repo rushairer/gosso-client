@@ -428,31 +428,114 @@ export function createGossoClient<TProfile = UserProfile>(
         fetcher(`${config.issuer}/oidc/userinfo`, {
           headers: sessionHeaders,
           credentials: identityCredentials,
-        }),
+        }).catch(() => null),
         config.sessionProfileEndpoint
           ? fetcher(config.sessionProfileEndpoint, {
               headers: sessionHeaders,
               credentials: credentialsFor(
                 assertAllowedRequest(config.sessionProfileEndpoint),
               ),
-            })
+            }).catch(() => null)
           : Promise.resolve(null),
       ]);
-      if (!identity.ok)
+
+      const isJson = (res: Response | null) => {
+        if (!res || !res.ok) return false;
+        const ct = res.headers.get("content-type") || "";
+        return !ct.includes("html");
+      };
+
+      let data: TProfile | null = null;
+      if (isJson(identity)) {
+        try {
+          data = (await identity!.json()) as TProfile;
+        } catch {
+          data = null;
+        }
+      }
+
+      if (isJson(session)) {
+        try {
+          const sessionEnv = (await session!.json()) as ApiEnvelope<
+            Partial<TProfile>
+          >;
+          const sessionData = (sessionEnv.data || {}) as Record<
+            string,
+            unknown
+          >;
+          const principal = sessionData.principal as
+            | {
+                subject?: string;
+                id?: number;
+                display_name?: string;
+                email?: string;
+              }
+            | undefined;
+          const mapped = {
+            sub:
+              principal?.subject ||
+              (principal?.id
+                ? String(principal.id)
+                : (sessionData.sub as string) ||
+                  (data
+                    ? (data as unknown as Record<string, unknown>).sub
+                    : "")),
+            name:
+              principal?.display_name ||
+              (sessionData.name as string) ||
+              (data ? (data as unknown as Record<string, unknown>).name : ""),
+            preferred_username:
+              principal?.display_name ||
+              (sessionData.preferred_username as string) ||
+              (data
+                ? (data as unknown as Record<string, unknown>)
+                    .preferred_username
+                : ""),
+            email:
+              principal?.email ||
+              (sessionData.email as string) ||
+              (data ? (data as unknown as Record<string, unknown>).email : ""),
+            roles:
+              sessionData.roles ||
+              (data
+                ? (data as unknown as Record<string, unknown>).roles
+                : []) ||
+              [],
+            permissions:
+              sessionData.permissions ||
+              (data
+                ? (data as unknown as Record<string, unknown>).permissions
+                : []) ||
+              [],
+            ...sessionData,
+          };
+          data = Object.assign(
+            (data as object) || {},
+            mapped,
+          ) as unknown as TProfile;
+        } catch {
+          // ignore session envelope parse error if data is already valid
+        }
+      }
+
+      const hasIdentifier =
+        data &&
+        (Boolean((data as unknown as Record<string, unknown>).sub) ||
+          (Array.isArray((data as unknown as Record<string, unknown>).roles) &&
+            ((data as unknown as Record<string, unknown>).roles as string[])
+              .length > 0));
+
+      if (!data || !hasIdentifier) {
         throw new AuthenticationError(
           "Failed to fetch user profile",
           "USER_PROFILE_FAILED",
           {
-            identityStatus: identity.status,
+            identityStatus: identity?.status,
             sessionStatus: session?.status,
           },
         );
-      const data = (await identity.json()) as TProfile;
-      if (session && session.ok)
-        Object.assign(
-          data as object,
-          ((await session.json()) as ApiEnvelope<Partial<TProfile>>).data || {},
-        );
+      }
+
       sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
       emitSessionChanged();
       return data;

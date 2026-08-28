@@ -6,7 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-## [0.8.4] - 2026-08-28
+## [0.8.5] - 2026-08-29
+
+### Fixed
+- Enhance `fetchUserProfile` in cookie session mode: use same-origin `sessionProfileEndpoint` directly when configured, avoiding unnecessary and potentially failing `/oidc/userinfo` cross-origin calls and preventing syntax errors from SPA HTML fallbacks.
 
 ### Fixed
 - Add circuit-breaker in `redirectToAuthorize` to strictly prevent infinite redirect loops (halts repetitive redirects to the same URL within guard interval).
