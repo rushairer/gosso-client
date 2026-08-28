@@ -913,6 +913,17 @@ export function createGossoClient<TProfile = UserProfile>(
     }
   };
 
+  const revalidateSession = async (): Promise<SessionSnapshot<TProfile>> => {
+    if (isLoggingOut) return getSnapshot();
+    try {
+      await fetchUserProfile();
+    } catch {
+      clear();
+      sessionInitialized = true;
+    }
+    return getSnapshot();
+  };
+
   const logout = async (redirectTo = "/") => {
     isLoggingOut = true;
     if (config.logoutEndpoint) {
@@ -1430,6 +1441,7 @@ export function createGossoClient<TProfile = UserProfile>(
     exchangeCodeForToken,
     handleRedirectCallback,
     initializeSession,
+    revalidateSession,
     fetchUserProfile,
     refreshAccessToken,
     apiFetch,

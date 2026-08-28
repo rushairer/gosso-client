@@ -33,6 +33,8 @@ export interface GossoProviderProps<TProfile = UserProfile> {
   children: React.ReactNode;
   /** Restore an existing Cookie Session before mounting authentication guards. */
   initializeSession?: boolean;
+  /** Auto-revalidate session on window focus / tab visibility change (default true). */
+  revalidateOnFocus?: boolean;
   /** Rendered while an opted-in session initialization is in progress. */
   fallback?: React.ReactNode;
   /** Receives unexpected initialization failures such as upstream outages. */
@@ -46,6 +48,7 @@ export function GossoProvider<TProfile = UserProfile>({
   client,
   children,
   initializeSession = false,
+  revalidateOnFocus = true,
   fallback = null,
   onInitializationError,
 }: GossoProviderProps<TProfile>) {
@@ -70,6 +73,31 @@ export function GossoProvider<TProfile = UserProfile>({
       active = false;
     };
   }, [client, initializeSession, onInitializationError]);
+
+  useEffect(() => {
+    if (!revalidateOnFocus || typeof window === "undefined") return;
+    let lastRevalidate = 0;
+    const handleRevalidate = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastRevalidate < 2000) return;
+      lastRevalidate = now;
+      if (typeof client.revalidateSession === "function") {
+        void client.revalidateSession();
+      }
+    };
+    window.addEventListener("focus", handleRevalidate);
+    document.addEventListener("visibilitychange", handleRevalidate);
+    return () => {
+      window.removeEventListener("focus", handleRevalidate);
+      document.removeEventListener("visibilitychange", handleRevalidate);
+    };
+  }, [client, revalidateOnFocus]);
 
   if (!initialized) return <>{fallback}</>;
 
