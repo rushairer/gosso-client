@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-28
+
+### Added
+- Generic `TProfile` support in `createGossoClient<TProfile>()`, `useSession<TProfile>()`, `useUserProfile<TProfile>()`, `GossoClientConfig<TProfile>`, and `SessionSnapshot<TProfile>` for seamless integration with application-specific user profile schemas.
+- Granular permission checking via `permissions?: string[]` and custom authorization logic via `predicate?: (profile, session) => boolean` in `useRequireAuth` and `<RequireAuth />`.
+
 ## [0.6.0] - 2026-08-28
 
 ### Added

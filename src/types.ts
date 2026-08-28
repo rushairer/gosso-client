@@ -1,4 +1,4 @@
-export interface GossoClientConfig {
+export interface GossoClientConfig<TProfile = UserProfile> {
   issuer: string;
   clientId: string;
   redirectUri: string;
@@ -18,7 +18,7 @@ export interface GossoClientConfig {
   refreshIdentityRequests?: boolean;
   fetchImpl?: typeof fetch;
   onAuthRequired?: () => void;
-  onSessionChanged?: (snapshot: SessionSnapshot) => void;
+  onSessionChanged?: (snapshot: SessionSnapshot<TProfile>) => void;
 }
 
 export interface TokenResponse {
@@ -49,16 +49,18 @@ export interface UserProfile {
   [key: string]: unknown;
 }
 
-export interface SessionSnapshot {
+export interface SessionSnapshot<TProfile = UserProfile> {
   accessToken: string | null;
   refreshToken: string | null;
-  profile: UserProfile | null;
+  profile: TProfile | null;
   loggedIn: boolean;
   isAdmin: boolean;
 }
 
 /** Receives the current state after this client changes its local session view. */
-export type SessionListener = (snapshot: SessionSnapshot) => void;
+export type SessionListener<TProfile = UserProfile> = (
+  snapshot: SessionSnapshot<TProfile>,
+) => void;
 
 export interface LoginResult {
   access_token?: string;

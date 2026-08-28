@@ -669,4 +669,101 @@ describe("@gosso/client/react", () => {
 
     expect(screen.getByText("Admin Content")).toBeDefined();
   });
+
+  it("RequireAuth and useRequireAuth support permissions and custom predicate", () => {
+    interface CustomProfile {
+      sub: string;
+      membership_status: string;
+      roles: string[];
+      permissions: string[];
+    }
+
+    const customSnapshot: SessionSnapshot<CustomProfile> = {
+      accessToken: "token",
+      refreshToken: "refresh",
+      profile: {
+        sub: "user-1",
+        membership_status: "active",
+        roles: ["editor"],
+        permissions: ["content.author", "content.manage"],
+      },
+      loggedIn: true,
+      isAdmin: false,
+    };
+
+    const client = createMockClient({
+      getSnapshot: vi.fn(() => customSnapshot as any),
+    });
+
+    function PermissionConsumer() {
+      const { hasAccess, permissionsSatisfied, predicateSatisfied } =
+        useRequireAuth<CustomProfile>({
+          permissions: ["content.author"],
+          predicate: (p) => p?.membership_status === "active",
+        });
+
+      return (
+        <div>
+          <span>{hasAccess ? "perm-access" : "no-perm-access"}</span>
+          <span>{permissionsSatisfied ? "perm-ok" : "perm-fail"}</span>
+          <span>{predicateSatisfied ? "pred-ok" : "pred-fail"}</span>
+        </div>
+      );
+    }
+
+    const { rerender } = render(
+      <GossoProvider client={client}>
+        <RequireAuth<CustomProfile>
+          permissions={["content.author"]}
+          predicate={(p) => p?.membership_status === "active"}
+          unauthorized={<div>Permission Denied</div>}
+        >
+          <div>Editor Content</div>
+        </RequireAuth>
+        <PermissionConsumer />
+      </GossoProvider>,
+    );
+
+    expect(screen.getByText("Editor Content")).toBeDefined();
+    expect(screen.getByText("perm-access")).toBeDefined();
+    expect(screen.getByText("perm-ok")).toBeDefined();
+    expect(screen.getByText("pred-ok")).toBeDefined();
+
+    // Test permission missing
+    rerender(
+      <GossoProvider client={client}>
+        <RequireAuth<CustomProfile>
+          permissions={["site.manage"]}
+          unauthorized={<div>Missing Site Manage</div>}
+        >
+          <div>Site Content</div>
+        </RequireAuth>
+      </GossoProvider>,
+    );
+    expect(screen.getByText("Missing Site Manage")).toBeDefined();
+
+    // Test predicate failing (suspended member)
+    const suspendedSnapshot: SessionSnapshot<CustomProfile> = {
+      ...customSnapshot,
+      profile: {
+        ...customSnapshot.profile!,
+        membership_status: "suspended",
+      },
+    };
+    const suspendedClient = createMockClient({
+      getSnapshot: vi.fn(() => suspendedSnapshot as any),
+    });
+    rerender(
+      <GossoProvider client={suspendedClient}>
+        <RequireAuth<CustomProfile>
+          permissions={["content.author"]}
+          predicate={(p) => p?.membership_status === "active"}
+          unauthorized={<div>Account Suspended</div>}
+        >
+          <div>Editor Content</div>
+        </RequireAuth>
+      </GossoProvider>,
+    );
+    expect(screen.getByText("Account Suspended")).toBeDefined();
+  });
 });

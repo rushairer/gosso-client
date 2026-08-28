@@ -60,7 +60,9 @@ export const defaultConfig: Pick<
   sessionMode: "cookie",
 };
 
-export function createGossoClient(inputConfig: GossoClientConfig) {
+export function createGossoClient<TProfile = UserProfile>(
+  inputConfig: GossoClientConfig<TProfile>,
+) {
   const config = {
     ...defaultConfig,
     ...inputConfig,
@@ -89,18 +91,18 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   let refreshPromise: Promise<string> | null = null;
   let memoryTokenSet: TokenResponse | null = null;
   let tokenIssuedAt = 0;
-  const sessionListeners = new Set<SessionListener>();
+  const sessionListeners = new Set<SessionListener<TProfile>>();
 
   const deleteCookie = (name: string) => {
     const cookieName = getCookieName(name);
     document.cookie = `${cookieName}=; path=/; max-age=-1; SameSite=Lax`;
   };
 
-  const readProfile = (): UserProfile | null => {
+  const readProfile = (): TProfile | null => {
     const profile = sessionStorage.getItem(storageKeys.userProfile);
     if (!profile) return null;
     try {
-      return JSON.parse(profile) as UserProfile;
+      return JSON.parse(profile) as TProfile;
     } catch {
       return null;
     }
@@ -111,9 +113,9 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const getRefreshToken = (): string | null =>
     cookieSession ? null : memoryTokenSet?.refresh_token || null;
 
-  let cachedSnapshot: SessionSnapshot | null = null;
+  let cachedSnapshot: SessionSnapshot<TProfile> | null = null;
 
-  const computeSnapshot = (): SessionSnapshot => {
+  const computeSnapshot = (): SessionSnapshot<TProfile> => {
     const accessToken = getAccessToken();
     const refreshToken = getRefreshToken();
     const profile = readProfile();
@@ -122,11 +124,14 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
       refreshToken,
       profile,
       loggedIn: cookieSession ? Boolean(profile) : Boolean(accessToken),
-      isAdmin: hasAdminAccess(profile, accessToken),
+      isAdmin: hasAdminAccess(
+        profile as unknown as UserProfile | null,
+        accessToken,
+      ),
     };
   };
 
-  const getSnapshot = (): SessionSnapshot => {
+  const getSnapshot = (): SessionSnapshot<TProfile> => {
     if (!cachedSnapshot) {
       cachedSnapshot = computeSnapshot();
     }
@@ -144,7 +149,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
    * store in each consuming SPA. Callers receive future changes only and must
    * read getSnapshot() for the initial value.
    */
-  const subscribe = (listener: SessionListener) => {
+  const subscribe = (listener: SessionListener<TProfile>) => {
     sessionListeners.add(listener);
     return () => {
       sessionListeners.delete(listener);
@@ -416,7 +421,7 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
 
   const fetchUserProfile = async (
     accessToken = getAccessToken(),
-  ): Promise<UserProfile> => {
+  ): Promise<TProfile> => {
     if (cookieSession) {
       const [identity, session] = await Promise.all([
         fetcher(`${config.issuer}/oidc/userinfo`, {
@@ -435,12 +440,11 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
           "Failed to fetch user profile",
           "USER_PROFILE_FAILED",
         );
-      const data = (await identity.json()) as UserProfile;
+      const data = (await identity.json()) as TProfile;
       if (session)
         Object.assign(
-          data,
-          ((await session.json()) as ApiEnvelope<Partial<UserProfile>>).data ||
-            {},
+          data as object,
+          ((await session.json()) as ApiEnvelope<Partial<TProfile>>).data || {},
         );
       sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
       sessionStorage.removeItem(storageKeys.authRedirectGuard);
@@ -457,11 +461,11 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
         "Failed to fetch user profile",
         "USER_PROFILE_FAILED",
       );
-    const data = (await response.json()) as UserProfile;
+    const data = (await response.json()) as TProfile;
     const roles = readRolesFromAccessToken(accessToken);
-    if (roles) data.roles = roles;
+    if (roles) (data as unknown as UserProfile).roles = roles;
     const scope = readScopeFromAccessToken(accessToken);
-    if (scope) data.scope = scope;
+    if (scope) (data as unknown as UserProfile).scope = scope;
     sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
     emitSessionChanged();
     return data;
@@ -1104,7 +1108,11 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     subscribe,
     isLoggedIn: () =>
       cookieSession ? Boolean(readProfile()) : Boolean(getAccessToken()),
-    isAdmin: () => hasAdminAccess(readProfile(), getAccessToken()),
+    isAdmin: () =>
+      hasAdminAccess(
+        readProfile() as unknown as UserProfile | null,
+        getAccessToken(),
+      ),
     saveTokenSet,
     clear,
     logout,
@@ -1265,4 +1273,6 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   };
 }
 
-export type GossoClient = ReturnType<typeof createGossoClient>;
+export type GossoClient<TProfile = UserProfile> = ReturnType<
+  typeof createGossoClient<TProfile>
+>;
