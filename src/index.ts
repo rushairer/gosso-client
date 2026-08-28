@@ -16,6 +16,8 @@ export type {
   RefreshLock,
   BrowserLockManager,
   NavigatorWithLocks,
+  QueryParams,
+  RequestOptions,
 } from "./types.js";
 
 export {

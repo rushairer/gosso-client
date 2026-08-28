@@ -8,7 +8,9 @@ import type {
   MfaStatus,
   NavigatorWithLocks,
   PasskeyInfo,
+  QueryParams,
   RefreshLock,
+  RequestOptions,
   SessionInfo,
   SessionListener,
   SessionSnapshot,
@@ -1098,6 +1100,24 @@ export function createGossoClient<TProfile = UserProfile>(
     await parseJsonEnvelope<unknown>(response, "Failed to revoke session");
   };
 
+  const appendQueryParams = (url: string, params?: QueryParams): string => {
+    if (!params) return url;
+    const search =
+      params instanceof URLSearchParams
+        ? new URLSearchParams(params.toString())
+        : new URLSearchParams();
+    if (!(params instanceof URLSearchParams)) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") {
+          search.set(k, String(v));
+        }
+      });
+    }
+    const qs = search.toString();
+    if (!qs) return url;
+    return url.includes("?") ? `${url}&${qs}` : `${url}?${qs}`;
+  };
+
   return {
     config,
     storageKeys,
@@ -1147,10 +1167,12 @@ export function createGossoClient<TProfile = UserProfile>(
       url: string,
       method: string,
       body?: unknown,
-      init: RequestInit = {},
+      init: RequestOptions = {},
     ): Promise<T> => {
-      const headers = new Headers(init.headers || {});
-      let payloadBody = init.body;
+      const { params, ...fetchInit } = init;
+      const targetUrl = appendQueryParams(url, params);
+      const headers = new Headers(fetchInit.headers || {});
+      let payloadBody = fetchInit.body;
       if (body !== undefined && payloadBody === undefined) {
         if (
           typeof body === "string" ||
@@ -1166,25 +1188,29 @@ export function createGossoClient<TProfile = UserProfile>(
           payloadBody = JSON.stringify(body);
         }
       }
-      return apiFetch(url, {
-        ...init,
+      return apiFetch(targetUrl, {
+        ...fetchInit,
         method,
         headers,
         body: payloadBody,
       }).then((res) => parseJsonEnvelope<T>(res, `${method} request failed`));
     },
-    get: <T = unknown>(url: string, init?: RequestInit): Promise<T> => {
-      return apiFetch(url, { ...init, method: "GET" }).then((res) =>
+    get: <T = unknown>(url: string, init?: RequestOptions): Promise<T> => {
+      const { params, ...fetchInit } = init || {};
+      const targetUrl = appendQueryParams(url, params);
+      return apiFetch(targetUrl, { ...fetchInit, method: "GET" }).then((res) =>
         parseJsonEnvelope<T>(res, "GET request failed"),
       );
     },
     post: <T = unknown>(
       url: string,
       body?: unknown,
-      init: RequestInit = {},
+      init: RequestOptions = {},
     ): Promise<T> => {
-      const headers = new Headers(init.headers || {});
-      let payloadBody = init.body;
+      const { params, ...fetchInit } = init;
+      const targetUrl = appendQueryParams(url, params);
+      const headers = new Headers(fetchInit.headers || {});
+      let payloadBody = fetchInit.body;
       if (body !== undefined && payloadBody === undefined) {
         if (
           typeof body === "string" ||
@@ -1200,8 +1226,8 @@ export function createGossoClient<TProfile = UserProfile>(
           payloadBody = JSON.stringify(body);
         }
       }
-      return apiFetch(url, {
-        ...init,
+      return apiFetch(targetUrl, {
+        ...fetchInit,
         method: "POST",
         headers,
         body: payloadBody,
@@ -1210,10 +1236,12 @@ export function createGossoClient<TProfile = UserProfile>(
     put: <T = unknown>(
       url: string,
       body?: unknown,
-      init: RequestInit = {},
+      init: RequestOptions = {},
     ): Promise<T> => {
-      const headers = new Headers(init.headers || {});
-      let payloadBody = init.body;
+      const { params, ...fetchInit } = init;
+      const targetUrl = appendQueryParams(url, params);
+      const headers = new Headers(fetchInit.headers || {});
+      let payloadBody = fetchInit.body;
       if (body !== undefined && payloadBody === undefined) {
         if (
           typeof body === "string" ||
@@ -1229,8 +1257,8 @@ export function createGossoClient<TProfile = UserProfile>(
           payloadBody = JSON.stringify(body);
         }
       }
-      return apiFetch(url, {
-        ...init,
+      return apiFetch(targetUrl, {
+        ...fetchInit,
         method: "PUT",
         headers,
         body: payloadBody,
@@ -1239,10 +1267,12 @@ export function createGossoClient<TProfile = UserProfile>(
     patch: <T = unknown>(
       url: string,
       body?: unknown,
-      init: RequestInit = {},
+      init: RequestOptions = {},
     ): Promise<T> => {
-      const headers = new Headers(init.headers || {});
-      let payloadBody = init.body;
+      const { params, ...fetchInit } = init;
+      const targetUrl = appendQueryParams(url, params);
+      const headers = new Headers(fetchInit.headers || {});
+      let payloadBody = fetchInit.body;
       if (body !== undefined && payloadBody === undefined) {
         if (
           typeof body === "string" ||
@@ -1258,16 +1288,18 @@ export function createGossoClient<TProfile = UserProfile>(
           payloadBody = JSON.stringify(body);
         }
       }
-      return apiFetch(url, {
-        ...init,
+      return apiFetch(targetUrl, {
+        ...fetchInit,
         method: "PATCH",
         headers,
         body: payloadBody,
       }).then((res) => parseJsonEnvelope<T>(res, "PATCH request failed"));
     },
-    delete: <T = unknown>(url: string, init?: RequestInit): Promise<T> => {
-      return apiFetch(url, { ...init, method: "DELETE" }).then((res) =>
-        parseJsonEnvelope<T>(res, "DELETE request failed"),
+    delete: <T = unknown>(url: string, init?: RequestOptions): Promise<T> => {
+      const { params, ...fetchInit } = init || {};
+      const targetUrl = appendQueryParams(url, params);
+      return apiFetch(targetUrl, { ...fetchInit, method: "DELETE" }).then(
+        (res) => parseJsonEnvelope<T>(res, "DELETE request failed"),
       );
     },
   };

@@ -6,7 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-## [0.6.1] - 2026-08-28
+## [0.7.0] - 2026-08-28
+
+### Added
+- Built-in query parameter serialization support (`params?: QueryParams`) in `client.get()`, `client.post()`, `client.put()`, `client.patch()`, `client.delete()`, and `client.requestJson()`.
+- Export `QueryParams` and `RequestOptions` types from `@gosso/client`.
+- Add reactive permission Hooks in `@gosso/client/react`: `usePermissions()`, `useHasPermission()`, `useHasAnyPermission()`, and `useHasRole()`.
+
 
 ### Added
 - Generic `TProfile` support in `createGossoClient<TProfile>()`, `useSession<TProfile>()`, `useUserProfile<TProfile>()`, `GossoClientConfig<TProfile>`, and `SessionSnapshot<TProfile>` for seamless integration with application-specific user profile schemas.

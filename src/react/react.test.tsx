@@ -12,6 +12,10 @@ import {
   useMfa,
   useSessions,
   useProfileManager,
+  usePermissions,
+  useHasPermission,
+  useHasAnyPermission,
+  useHasRole,
   AuthCallback,
   RequireAuth,
   RequireAdmin,
@@ -765,5 +769,70 @@ describe("@gosso/client/react", () => {
       </GossoProvider>,
     );
     expect(screen.getByText("Account Suspended")).toBeDefined();
+  });
+
+  it("usePermissions, useHasPermission, useHasAnyPermission, useHasRole reactively evaluate permissions and roles", () => {
+    interface CustomProfile {
+      sub: string;
+      roles: string[];
+      permissions: string[];
+    }
+
+    const testSnapshot = {
+      accessToken: "token",
+      refreshToken: "refresh",
+      profile: {
+        sub: "user-1",
+        roles: ["editor", "author"],
+        permissions: ["posts:create", "posts:edit"],
+      },
+      loggedIn: true,
+      isAdmin: false,
+    };
+    const client = createMockClient({
+      getSnapshot: vi.fn(() => testSnapshot),
+    });
+
+    function TestHooks() {
+      const perms = usePermissions<CustomProfile>();
+      const canCreate = useHasPermission<CustomProfile>("posts:create");
+      const canDelete = useHasPermission<CustomProfile>("posts:delete");
+      const hasAny = useHasAnyPermission<CustomProfile>([
+        "posts:delete",
+        "posts:edit",
+      ]);
+      const hasNone = useHasAnyPermission<CustomProfile>([
+        "posts:delete",
+        "posts:admin",
+      ]);
+      const isEditor = useHasRole<CustomProfile>("editor");
+      const isAdmin = useHasRole<CustomProfile>("admin");
+
+      return (
+        <div>
+          <span data-testid="perms-count">{perms.length}</span>
+          <span data-testid="can-create">{canCreate ? "yes" : "no"}</span>
+          <span data-testid="can-delete">{canDelete ? "yes" : "no"}</span>
+          <span data-testid="has-any">{hasAny ? "yes" : "no"}</span>
+          <span data-testid="has-none">{hasNone ? "yes" : "no"}</span>
+          <span data-testid="is-editor">{isEditor ? "yes" : "no"}</span>
+          <span data-testid="is-admin">{isAdmin ? "yes" : "no"}</span>
+        </div>
+      );
+    }
+
+    render(
+      <GossoProvider client={client}>
+        <TestHooks />
+      </GossoProvider>,
+    );
+
+    expect(screen.getByTestId("perms-count").textContent).toBe("2");
+    expect(screen.getByTestId("can-create").textContent).toBe("yes");
+    expect(screen.getByTestId("can-delete").textContent).toBe("no");
+    expect(screen.getByTestId("has-any").textContent).toBe("yes");
+    expect(screen.getByTestId("has-none").textContent).toBe("no");
+    expect(screen.getByTestId("is-editor").textContent).toBe("yes");
+    expect(screen.getByTestId("is-admin").textContent).toBe("no");
   });
 });

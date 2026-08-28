@@ -117,3 +117,9 @@ export interface BrowserLockManager {
 }
 
 export type NavigatorWithLocks = Navigator & { locks?: BrowserLockManager };
+
+export type QueryParams = Record<string, unknown> | URLSearchParams;
+
+export interface RequestOptions extends RequestInit {
+  params?: QueryParams;
+}

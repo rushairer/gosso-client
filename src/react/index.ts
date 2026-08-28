@@ -13,6 +13,10 @@ export {
   useMfa,
   useSessions,
   useProfileManager,
+  usePermissions,
+  useHasPermission,
+  useHasAnyPermission,
+  useHasRole,
 } from "./hooks.js";
 
 export { AuthCallback } from "./AuthCallback.js";

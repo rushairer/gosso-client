@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useGossoClient } from "./context.js";
+import { useGossoClient, useUserProfile } from "./context.js";
 import type {
   MfaEnrollment,
   MfaStatus,
@@ -366,4 +366,44 @@ export function useProfileManager() {
     requestEmailChange,
     confirmEmailChange,
   };
+}
+
+/**
+ * Returns the permissions array of the current authenticated user profile, or an empty array.
+ */
+export function usePermissions<TProfile = UserProfile>(): string[] {
+  const profile = useUserProfile<TProfile>() as unknown as {
+    permissions?: string[];
+  } | null;
+  return Array.isArray(profile?.permissions) ? profile.permissions : [];
+}
+
+/**
+ * Returns whether the current authenticated user has the specified permission.
+ */
+export function useHasPermission<TProfile = UserProfile>(
+  permission: string,
+): boolean {
+  const permissions = usePermissions<TProfile>();
+  return permissions.includes(permission);
+}
+
+/**
+ * Returns whether the current authenticated user has any of the specified permissions.
+ */
+export function useHasAnyPermission<TProfile = UserProfile>(
+  permissions: string[],
+): boolean {
+  const currentPermissions = usePermissions<TProfile>();
+  return permissions.some((p) => currentPermissions.includes(p));
+}
+
+/**
+ * Returns whether the current authenticated user has the specified role.
+ */
+export function useHasRole<TProfile = UserProfile>(role: string): boolean {
+  const profile = useUserProfile<TProfile>() as unknown as {
+    roles?: string[];
+  } | null;
+  return Array.isArray(profile?.roles) && profile.roles.includes(role);
 }

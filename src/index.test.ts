@@ -844,6 +844,22 @@ describe("@gosso/client", () => {
 
       const delRes = await client.delete<{ method: string }>("/api/test");
       expect(delRes.method).toBe("DELETE");
+
+      const getWithParams = await client.get<{ method: string; path: string }>(
+        "/api/items",
+        { params: { page: 2, tag: "tech", empty: "" } },
+      );
+      expect(getWithParams.path).toBe("/api/items?page=2&tag=tech");
+
+      const getWithExistingParams = await client.get<{
+        method: string;
+        path: string;
+      }>("/api/items?filter=active", {
+        params: new URLSearchParams({ sort: "desc" }),
+      });
+      expect(getWithExistingParams.path).toBe(
+        "/api/items?filter=active&sort=desc",
+      );
     });
   });
 });
