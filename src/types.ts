@@ -46,6 +46,7 @@ export interface UserProfile {
   email?: string;
   roles?: string[];
   scope?: string;
+  [key: string]: unknown;
 }
 
 export interface SessionSnapshot {

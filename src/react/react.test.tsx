@@ -13,6 +13,9 @@ import {
   useSessions,
   useProfileManager,
   AuthCallback,
+  RequireAuth,
+  RequireAdmin,
+  useRequireAuth,
 } from "./index.js";
 import { createGossoClient, type GossoClient } from "../client.js";
 import type { SessionSnapshot } from "../types.js";
@@ -574,5 +577,96 @@ describe("@gosso/client/react", () => {
 
     expect(screen.getByText("LoggedIn: no")).toBeDefined();
     expect(renderCount).toBeLessThan(3);
+  });
+
+  it("RequireAuth, RequireAdmin and useRequireAuth protect routes and trigger redirectToAuthorize", async () => {
+    const unauthSnapshot: SessionSnapshot = {
+      accessToken: null,
+      refreshToken: null,
+      profile: null,
+      loggedIn: false,
+      isAdmin: false,
+    };
+    const unauthClient = createMockClient({
+      getSnapshot: vi.fn(() => unauthSnapshot),
+      redirectToAuthorize: vi.fn().mockResolvedValue(undefined),
+    });
+
+    function HookConsumer() {
+      const { hasAccess, loading } = useRequireAuth({ roles: ["admin"] });
+      return (
+        <div>
+          <span>{loading ? "loading" : "ready"}</span>
+          <span>{hasAccess ? "access" : "no-access"}</span>
+        </div>
+      );
+    }
+
+    const { rerender } = render(
+      <GossoProvider client={unauthClient}>
+        <RequireAuth
+          fallback={<div>Fallback Loading</div>}
+          unauthorized={<div>Unauthorized</div>}
+        >
+          <div>Protected Content</div>
+        </RequireAuth>
+        <HookConsumer />
+      </GossoProvider>,
+    );
+
+    expect(screen.getByText("Fallback Loading")).toBeDefined();
+    expect(unauthClient.redirectToAuthorize).toHaveBeenCalled();
+
+    const authNonAdminSnapshot: SessionSnapshot = {
+      accessToken: "token",
+      refreshToken: "refresh",
+      profile: { sub: "user-1", roles: ["user"] },
+      loggedIn: true,
+      isAdmin: false,
+    };
+    const authNonAdminClient = createMockClient({
+      getSnapshot: vi.fn(() => authNonAdminSnapshot),
+    });
+
+    rerender(
+      <GossoProvider client={authNonAdminClient}>
+        <RequireAuth roles={["admin"]} unauthorized={<div>Role Denied</div>}>
+          <div>Protected Content</div>
+        </RequireAuth>
+        <HookConsumer />
+      </GossoProvider>,
+    );
+
+    expect(screen.getByText("Role Denied")).toBeDefined();
+
+    rerender(
+      <GossoProvider client={authNonAdminClient}>
+        <RequireAdmin unauthorized={<div>Admin Only</div>}>
+          <div>Admin Content</div>
+        </RequireAdmin>
+      </GossoProvider>,
+    );
+
+    expect(screen.getByText("Admin Only")).toBeDefined();
+
+    const adminSnapshot: SessionSnapshot = {
+      accessToken: "token",
+      refreshToken: "refresh",
+      profile: { sub: "user-1", roles: ["admin"] },
+      loggedIn: true,
+      isAdmin: true,
+    };
+    const adminClient = createMockClient({
+      getSnapshot: vi.fn(() => adminSnapshot),
+    });
+    rerender(
+      <GossoProvider client={adminClient}>
+        <RequireAdmin>
+          <div>Admin Content</div>
+        </RequireAdmin>
+      </GossoProvider>,
+    );
+
+    expect(screen.getByText("Admin Content")).toBeDefined();
   });
 });

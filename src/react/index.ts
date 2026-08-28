@@ -17,3 +17,10 @@ export {
 
 export { AuthCallback } from "./AuthCallback.js";
 export type { AuthCallbackProps } from "./AuthCallback.js";
+
+export { RequireAuth, RequireAdmin, useRequireAuth } from "./guards.js";
+export type {
+  RequireAuthProps,
+  RequireAdminProps,
+  RequireAuthOptions,
+} from "./guards.js";

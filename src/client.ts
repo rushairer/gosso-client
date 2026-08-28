@@ -1135,6 +1135,133 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     listSessions,
     getCurrentSession,
     revokeSession,
+    requestJson: <T = unknown>(
+      url: string,
+      method: string,
+      body?: unknown,
+      init: RequestInit = {},
+    ): Promise<T> => {
+      const headers = new Headers(init.headers || {});
+      let payloadBody = init.body;
+      if (body !== undefined && payloadBody === undefined) {
+        if (
+          typeof body === "string" ||
+          body instanceof FormData ||
+          body instanceof URLSearchParams ||
+          body instanceof Blob
+        ) {
+          payloadBody = body;
+        } else {
+          if (!headers.has("Content-Type")) {
+            headers.set("Content-Type", "application/json");
+          }
+          payloadBody = JSON.stringify(body);
+        }
+      }
+      return apiFetch(url, {
+        ...init,
+        method,
+        headers,
+        body: payloadBody,
+      }).then((res) => parseJsonEnvelope<T>(res, `${method} request failed`));
+    },
+    get: <T = unknown>(url: string, init?: RequestInit): Promise<T> => {
+      return apiFetch(url, { ...init, method: "GET" }).then((res) =>
+        parseJsonEnvelope<T>(res, "GET request failed"),
+      );
+    },
+    post: <T = unknown>(
+      url: string,
+      body?: unknown,
+      init: RequestInit = {},
+    ): Promise<T> => {
+      const headers = new Headers(init.headers || {});
+      let payloadBody = init.body;
+      if (body !== undefined && payloadBody === undefined) {
+        if (
+          typeof body === "string" ||
+          body instanceof FormData ||
+          body instanceof URLSearchParams ||
+          body instanceof Blob
+        ) {
+          payloadBody = body;
+        } else {
+          if (!headers.has("Content-Type")) {
+            headers.set("Content-Type", "application/json");
+          }
+          payloadBody = JSON.stringify(body);
+        }
+      }
+      return apiFetch(url, {
+        ...init,
+        method: "POST",
+        headers,
+        body: payloadBody,
+      }).then((res) => parseJsonEnvelope<T>(res, "POST request failed"));
+    },
+    put: <T = unknown>(
+      url: string,
+      body?: unknown,
+      init: RequestInit = {},
+    ): Promise<T> => {
+      const headers = new Headers(init.headers || {});
+      let payloadBody = init.body;
+      if (body !== undefined && payloadBody === undefined) {
+        if (
+          typeof body === "string" ||
+          body instanceof FormData ||
+          body instanceof URLSearchParams ||
+          body instanceof Blob
+        ) {
+          payloadBody = body;
+        } else {
+          if (!headers.has("Content-Type")) {
+            headers.set("Content-Type", "application/json");
+          }
+          payloadBody = JSON.stringify(body);
+        }
+      }
+      return apiFetch(url, {
+        ...init,
+        method: "PUT",
+        headers,
+        body: payloadBody,
+      }).then((res) => parseJsonEnvelope<T>(res, "PUT request failed"));
+    },
+    patch: <T = unknown>(
+      url: string,
+      body?: unknown,
+      init: RequestInit = {},
+    ): Promise<T> => {
+      const headers = new Headers(init.headers || {});
+      let payloadBody = init.body;
+      if (body !== undefined && payloadBody === undefined) {
+        if (
+          typeof body === "string" ||
+          body instanceof FormData ||
+          body instanceof URLSearchParams ||
+          body instanceof Blob
+        ) {
+          payloadBody = body;
+        } else {
+          if (!headers.has("Content-Type")) {
+            headers.set("Content-Type", "application/json");
+          }
+          payloadBody = JSON.stringify(body);
+        }
+      }
+      return apiFetch(url, {
+        ...init,
+        method: "PATCH",
+        headers,
+        body: payloadBody,
+      }).then((res) => parseJsonEnvelope<T>(res, "PATCH request failed"));
+    },
+    delete: <T = unknown>(url: string, init?: RequestInit): Promise<T> => {
+      return apiFetch(url, { ...init, method: "DELETE" }).then((res) =>
+        parseJsonEnvelope<T>(res, "DELETE request failed"),
+      );
+    },
   };
 }
 

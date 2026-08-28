@@ -811,5 +811,39 @@ describe("@gosso/client", () => {
       expect(res.amr).toEqual(["pwd", "otp"]);
       expect(res.access_token).toBeUndefined();
     });
+
+    it("performs typed HTTP helper requests (get, post, put, patch, delete)", async () => {
+      const fetchImpl = vi.fn().mockImplementation((url, options) => {
+        const method = options?.method || "GET";
+        return Promise.resolve(
+          jsonResponse({
+            code: 200,
+            data: { method, path: String(url) },
+          }),
+        );
+      });
+      const client = createCookieClient(fetchImpl);
+
+      const getRes = await client.get<{ method: string }>("/api/test");
+      expect(getRes.method).toBe("GET");
+
+      const postRes = await client.post<{ method: string }>("/api/test", {
+        foo: "bar",
+      });
+      expect(postRes.method).toBe("POST");
+
+      const putRes = await client.put<{ method: string }>("/api/test", {
+        foo: "bar",
+      });
+      expect(putRes.method).toBe("PUT");
+
+      const patchRes = await client.patch<{ method: string }>("/api/test", {
+        foo: "bar",
+      });
+      expect(patchRes.method).toBe("PATCH");
+
+      const delRes = await client.delete<{ method: string }>("/api/test");
+      expect(delRes.method).toBe("DELETE");
+    });
   });
 });

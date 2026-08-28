@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-28
+
+### Added
+- Add `<RequireAuth />` and `<RequireAdmin />` route/component guards along with `useRequireAuth()` hook in `@gosso/client/react`.
+- Add typed HTTP client helpers (`client.get()`, `client.post()`, `client.put()`, `client.patch()`, `client.delete()`, `client.requestJson()`) to `createGossoClient`.
+- Support custom profile properties on `UserProfile`.
+
 ## [0.5.1] - 2026-08-28
 
 ### Fixed
