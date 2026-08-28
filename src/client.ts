@@ -440,7 +440,7 @@ export function createGossoClient<TProfile = UserProfile>(
             })
           : Promise.resolve(null),
       ]);
-      if (!identity.ok || (session && !session.ok))
+      if (!identity.ok)
         throw new AuthenticationError(
           "Failed to fetch user profile",
           "USER_PROFILE_FAILED",
@@ -450,7 +450,7 @@ export function createGossoClient<TProfile = UserProfile>(
           },
         );
       const data = (await identity.json()) as TProfile;
-      if (session)
+      if (session && session.ok)
         Object.assign(
           data as object,
           ((await session.json()) as ApiEnvelope<Partial<TProfile>>).data || {},
@@ -462,15 +462,34 @@ export function createGossoClient<TProfile = UserProfile>(
     }
     if (!accessToken)
       throw new AuthenticationError("No access token found", "NO_ACCESS_TOKEN");
-    const response = await fetcher(`${config.issuer}/oidc/userinfo`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok)
+    const [identity, session] = await Promise.all([
+      fetcher(`${config.issuer}/oidc/userinfo`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }),
+      config.sessionProfileEndpoint
+        ? fetcher(config.sessionProfileEndpoint, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            credentials: credentialsFor(
+              assertAllowedRequest(config.sessionProfileEndpoint),
+            ),
+          })
+        : Promise.resolve(null),
+    ]);
+    if (!identity.ok)
       throw new AuthenticationError(
         "Failed to fetch user profile",
         "USER_PROFILE_FAILED",
+        {
+          identityStatus: identity.status,
+          sessionStatus: session?.status,
+        },
       );
-    const data = (await response.json()) as TProfile;
+    const data = (await identity.json()) as TProfile;
+    if (session && session.ok)
+      Object.assign(
+        data as object,
+        ((await session.json()) as ApiEnvelope<Partial<TProfile>>).data || {},
+      );
     const roles = readRolesFromAccessToken(accessToken);
     if (roles) (data as unknown as UserProfile).roles = roles;
     const scope = readScopeFromAccessToken(accessToken);

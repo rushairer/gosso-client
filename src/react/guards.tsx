@@ -20,7 +20,7 @@ function redirectToAuthorizeOnce(
   const release = () => {
     window.setTimeout(() => {
       if (redirects?.get(returnTo) === pending) redirects.delete(returnTo);
-    }, 0);
+    }, 1000);
   };
   void pending.then(release, release);
   return pending;

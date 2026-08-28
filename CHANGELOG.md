@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-08-28
+
+### Fixed
+- Prevent infinite redirect loop when `sessionProfileEndpoint` returns 401/403: maintain verified SSO identity snapshot with empty downstream claims so application permission guards can render access denied UI instead of looping.
+- Support `sessionProfileEndpoint` in token authorization mode (`Bearer <token>`).
+- Debounce concurrent redirect execution in `redirectToAuthorizeOnce`.
+
 ## [0.8.2] - 2026-08-28
 
 ### Added
