@@ -111,7 +111,9 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
   const getRefreshToken = (): string | null =>
     cookieSession ? null : memoryTokenSet?.refresh_token || null;
 
-  const getSnapshot = (): SessionSnapshot => {
+  let cachedSnapshot: SessionSnapshot | null = null;
+
+  const computeSnapshot = (): SessionSnapshot => {
     const accessToken = getAccessToken();
     const refreshToken = getRefreshToken();
     const profile = readProfile();
@@ -124,10 +126,17 @@ export function createGossoClient(inputConfig: GossoClientConfig) {
     };
   };
 
+  const getSnapshot = (): SessionSnapshot => {
+    if (!cachedSnapshot) {
+      cachedSnapshot = computeSnapshot();
+    }
+    return cachedSnapshot;
+  };
+
   const emitSessionChanged = () => {
-    const snapshot = getSnapshot();
-    config.onSessionChanged?.(snapshot);
-    sessionListeners.forEach((listener) => listener(snapshot));
+    cachedSnapshot = computeSnapshot();
+    config.onSessionChanged?.(cachedSnapshot);
+    sessionListeners.forEach((listener) => listener(cachedSnapshot!));
   };
 
   /**

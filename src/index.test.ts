@@ -782,6 +782,18 @@ describe("@gosso/client", () => {
       );
     });
 
+    it("maintains referential equality of getSnapshot() until session changes", () => {
+      const client = createClient();
+      const s1 = client.getSnapshot();
+      const s2 = client.getSnapshot();
+      expect(s1).toBe(s2);
+
+      client.saveTokenSet({ access_token: "token-123", expires_in: 900 });
+      const s3 = client.getSnapshot();
+      expect(s3).not.toBe(s1);
+      expect(client.getSnapshot()).toBe(s3);
+    });
+
     it("completes step-up MFA without access_token in cookie session mode", async () => {
       const fetchImpl = vi.fn().mockResolvedValue(
         jsonResponse({

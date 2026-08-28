@@ -14,7 +14,7 @@ import {
   useProfileManager,
   AuthCallback,
 } from "./index.js";
-import type { GossoClient } from "../client.js";
+import { createGossoClient, type GossoClient } from "../client.js";
 import type { SessionSnapshot } from "../types.js";
 
 function createMockClient(overrides: Partial<GossoClient> = {}): GossoClient {
@@ -551,5 +551,28 @@ describe("@gosso/client/react", () => {
     });
 
     expect(errorClient.registerPasskey).toHaveBeenCalled();
+  });
+
+  it("renders with a real createGossoClient instance without triggering render loops", () => {
+    const realClient = createGossoClient({
+      issuer: "http://localhost:8088",
+      clientId: "test-app",
+    });
+
+    let renderCount = 0;
+    function RealConsumer() {
+      const session = useSession();
+      renderCount++;
+      return <div>LoggedIn: {session.loggedIn ? "yes" : "no"}</div>;
+    }
+
+    render(
+      <GossoProvider client={realClient}>
+        <RealConsumer />
+      </GossoProvider>,
+    );
+
+    expect(screen.getByText("LoggedIn: no")).toBeDefined();
+    expect(renderCount).toBeLessThan(3);
   });
 });

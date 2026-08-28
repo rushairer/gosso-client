@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-28
+
+### Fixed
+- Cache the `getSnapshot()` object reference in `GossoClient` to ensure referential stability for React `useSyncExternalStore` (`useSession`), preventing infinite render loops and error boundary crashes.
+
 ## [0.5.0] - 2026-08-28
 
 ### Added
