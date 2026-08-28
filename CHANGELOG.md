@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-08-28
+
+### Fixed
+- Add circuit-breaker in `redirectToAuthorize` to strictly prevent infinite redirect loops (halts repetitive redirects to the same URL within guard interval).
+- Preserve in-memory `access_token` from PKCE token exchange across all session modes and forward `Authorization: Bearer <token>` to both downstream APIs and `sessionProfileEndpoint`.
+- Eliminate premature deletion of redirect guard state on page loads.
+
 ## [0.8.3] - 2026-08-28
 
 ### Fixed

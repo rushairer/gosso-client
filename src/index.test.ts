@@ -648,6 +648,24 @@ describe("@gosso/client", () => {
     ).toHaveLength(2);
   });
 
+  it("halts redirect loop when redirectToAuthorize is called repeatedly", async () => {
+    const client = createCookieClient();
+    await client.redirectToAuthorize("/admin");
+    const firstState = sessionStorage.getItem("cookie-test:auth_state");
+    expect(firstState).toBeTruthy();
+
+    await client.redirectToAuthorize("/admin");
+    expect(sessionStorage.getItem("cookie-test:auth_redirect_guard")).toContain(
+      '"count":2',
+    );
+
+    // Third attempt within the guard window triggers loop breaker
+    await client.redirectToAuthorize("/admin");
+    expect(sessionStorage.getItem("cookie-test:auth_redirect_guard")).toContain(
+      '"count":2',
+    );
+  });
+
   it("does not retry indefinitely when the retried request is still 401", async () => {
     document.cookie = "__Host-csrf_token=gosso-value; path=/; Secure";
     const fetchMock = vi.fn(async (url: string) => {

@@ -193,14 +193,6 @@ export function createGossoClient<TProfile = UserProfile>(
     emitSessionChanged();
   };
 
-  const redirectToLogin = () => {
-    if (config.onAuthRequired) {
-      config.onAuthRequired();
-      return;
-    }
-    window.location.href = safeLocalPath(config.loginPath, "/login");
-  };
-
   const identityCSRFCookieName =
     new URL(config.issuer).protocol === "https:"
       ? "__Host-csrf_token"
@@ -427,13 +419,19 @@ export function createGossoClient<TProfile = UserProfile>(
   const fetchUserProfile = async (
     accessToken = getAccessToken(),
   ): Promise<TProfile> => {
+    const token = accessToken || getAccessToken();
+    const sessionHeaders: HeadersInit = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
     if (cookieSession) {
       const [identity, session] = await Promise.all([
         fetcher(`${config.issuer}/oidc/userinfo`, {
+          headers: sessionHeaders,
           credentials: identityCredentials,
         }),
         config.sessionProfileEndpoint
           ? fetcher(config.sessionProfileEndpoint, {
+              headers: sessionHeaders,
               credentials: credentialsFor(
                 assertAllowedRequest(config.sessionProfileEndpoint),
               ),
@@ -456,19 +454,18 @@ export function createGossoClient<TProfile = UserProfile>(
           ((await session.json()) as ApiEnvelope<Partial<TProfile>>).data || {},
         );
       sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
-      sessionStorage.removeItem(storageKeys.authRedirectGuard);
       emitSessionChanged();
       return data;
     }
-    if (!accessToken)
+    if (!token)
       throw new AuthenticationError("No access token found", "NO_ACCESS_TOKEN");
     const [identity, session] = await Promise.all([
       fetcher(`${config.issuer}/oidc/userinfo`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       }),
       config.sessionProfileEndpoint
         ? fetcher(config.sessionProfileEndpoint, {
-            headers: { Authorization: `Bearer ${accessToken}` },
+            headers: { Authorization: `Bearer ${token}` },
             credentials: credentialsFor(
               assertAllowedRequest(config.sessionProfileEndpoint),
             ),
@@ -490,9 +487,9 @@ export function createGossoClient<TProfile = UserProfile>(
         data as object,
         ((await session.json()) as ApiEnvelope<Partial<TProfile>>).data || {},
       );
-    const roles = readRolesFromAccessToken(accessToken);
+    const roles = readRolesFromAccessToken(token);
     if (roles) (data as unknown as UserProfile).roles = roles;
-    const scope = readScopeFromAccessToken(accessToken);
+    const scope = readScopeFromAccessToken(token);
     if (scope) (data as unknown as UserProfile).scope = scope;
     sessionStorage.setItem(storageKeys.userProfile, JSON.stringify(data));
     emitSessionChanged();
@@ -504,8 +501,12 @@ export function createGossoClient<TProfile = UserProfile>(
     options: RequestInit = {},
   ): Promise<Response> => {
     const target = assertAllowedRequest(url);
+    const token = getAccessToken();
     if (cookieSession) {
       const headers = new Headers(options.headers || {});
+      if (token && !headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
       const issuerRequest = isIdentityRequest(target.toString());
       if (
         !["GET", "HEAD", "OPTIONS"].includes(
@@ -531,6 +532,10 @@ export function createGossoClient<TProfile = UserProfile>(
       ) {
         try {
           await refreshAccessToken();
+          const freshToken = getAccessToken();
+          if (freshToken && !headers.has("Authorization")) {
+            headers.set("Authorization", `Bearer ${freshToken}`);
+          }
           response = await fetcher(url, {
             ...options,
             headers,
@@ -561,10 +566,6 @@ export function createGossoClient<TProfile = UserProfile>(
         }
         if (!recentlyRedirected) {
           clear();
-          sessionStorage.setItem(
-            storageKeys.authRedirectGuard,
-            JSON.stringify({ at: now, returnTo }),
-          );
           await redirectToAuthorize(returnTo);
         } else if (previous) {
           sessionStorage.removeItem(storageKeys.userProfile);
@@ -574,24 +575,28 @@ export function createGossoClient<TProfile = UserProfile>(
       }
       return response;
     }
-    let token = getAccessToken();
-    if (!token) {
-      redirectToLogin();
+    let currentToken = token;
+    if (!currentToken) {
+      if (config.onAuthRequired) {
+        config.onAuthRequired();
+      }
       return new Response(null, { status: 401 });
     }
     const expiresIn = memoryTokenSet?.expires_in || 900;
     if (tokenIssuedAt && Date.now() - tokenIssuedAt > expiresIn * 1000) {
       try {
-        token = await refreshAccessToken();
+        currentToken = await refreshAccessToken();
       } catch {
         clear();
-        redirectToLogin();
+        if (config.onAuthRequired) {
+          config.onAuthRequired();
+        }
         return new Response(null, { status: 401 });
       }
     }
     const headers = new Headers(options.headers || {});
-    if (token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${token}`);
+    if (currentToken && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${currentToken}`);
     }
     let response = await fetcher(url, { ...options, headers });
     if (response.status === 401 && getRefreshToken()) {
@@ -601,13 +606,54 @@ export function createGossoClient<TProfile = UserProfile>(
         response = await fetcher(url, { ...options, headers });
       } catch {
         clear();
-        redirectToLogin();
+        if (config.onAuthRequired) {
+          config.onAuthRequired();
+        }
       }
     }
     return response;
   };
 
   const redirectToAuthorize = async (customRedirectUri?: string) => {
+    const returnTo = safeLocalPath(
+      customRedirectUri,
+      config.postLoginDefaultPath,
+    );
+    const guardKey = storageKeys.authRedirectGuard;
+    const previous = sessionStorage.getItem(guardKey);
+    const now = Date.now();
+    let count = 1;
+    if (previous) {
+      try {
+        const guard = JSON.parse(previous) as {
+          at?: number;
+          returnTo?: string;
+          count?: number;
+        };
+        if (
+          guard?.returnTo === returnTo &&
+          typeof guard.at === "number" &&
+          now - guard.at < AUTH_REDIRECT_GUARD_MS
+        ) {
+          count = (guard.count || 1) + 1;
+          if (count > 2) {
+            console.warn(
+              `[@gosso/client] Redirect loop detected for "${returnTo}". Halting redirect.`,
+            );
+            sessionInitialized = true;
+            emitSessionChanged();
+            return;
+          }
+        }
+      } catch {
+        count = 1;
+      }
+    }
+    sessionStorage.setItem(
+      guardKey,
+      JSON.stringify({ at: now, returnTo, count }),
+    );
+
     const verifier = generateRandomString(64);
     const state = generateRandomString(16);
     flowStorage.setItem(storageKeys.pkceVerifier, verifier);
@@ -668,7 +714,9 @@ export function createGossoClient<TProfile = UserProfile>(
       );
     }
     const data = (await response.json()) as AuthenticationResult;
-    if (!cookieSession) saveTokenSet(data as TokenResponse);
+    if ("access_token" in (data as object)) {
+      saveTokenSet(data as TokenResponse);
+    }
     flowStorage.removeItem(storageKeys.pkceVerifier);
     flowStorage.removeItem(storageKeys.authState);
     return data;
@@ -679,15 +727,16 @@ export function createGossoClient<TProfile = UserProfile>(
     state: string,
   ): Promise<AuthCallbackResult> => {
     const tokenSet = await exchangeCodeForToken(code, state);
-    await fetchUserProfile(
-      cookieSession ? undefined : (tokenSet as TokenResponse).access_token,
-    );
+    const token =
+      "access_token" in (tokenSet as object)
+        ? (tokenSet as TokenResponse).access_token
+        : undefined;
+    await fetchUserProfile(token);
     const redirectTo = safeLocalPath(
       flowStorage.getItem(storageKeys.postLoginRedirect) || undefined,
       config.postLoginDefaultPath,
     );
     flowStorage.removeItem(storageKeys.postLoginRedirect);
-    sessionStorage.removeItem(storageKeys.authRedirectGuard);
     if (cookieSession) return { sessionMode: "cookie", redirectTo };
     return {
       sessionMode: "token",
