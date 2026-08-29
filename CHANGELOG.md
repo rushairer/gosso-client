@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-08-29
+
+### Added
+- Add RFC 8707 Resource Indicator support: add optional `resource` property to `GossoClientConfig` and append `resource` parameter when building `/oauth2/authorize` URL.
+
 ## [0.8.5] - 2026-08-29
 
 ### Fixed

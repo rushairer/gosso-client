@@ -765,6 +765,9 @@ export function createGossoClient<TProfile = UserProfile>(
     authUrl.searchParams.append("code_challenge", challenge);
     authUrl.searchParams.append("code_challenge_method", "S256");
     authUrl.searchParams.append("state", state);
+    if (config.resource) {
+      authUrl.searchParams.append("resource", config.resource);
+    }
     window.location.href = authUrl.toString();
   };
 
