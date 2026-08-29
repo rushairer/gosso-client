@@ -1,11 +1,11 @@
 export interface GossoClientConfig<TProfile = UserProfile> {
   issuer: string;
-  clientId: string;
-  redirectUri: string;
-  scope: string;
-  postLoginDefaultPath: string;
-  loginPath: string;
-  storagePrefix: string;
+  clientId?: string;
+  redirectUri?: string;
+  scope?: string;
+  postLoginDefaultPath?: string;
+  loginPath?: string;
+  storagePrefix?: string;
   /** Target RFC 8707 resource indicator URI requested during authorization. */
   resource?: string;
   /** Use HttpOnly Gosso cookies instead of exposing tokens to JavaScript. */

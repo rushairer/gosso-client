@@ -746,6 +746,13 @@ export function createGossoClient<TProfile = UserProfile>(
       return;
     }
 
+    if (!config.clientId || !config.redirectUri) {
+      throw new AuthenticationError(
+        "clientId and redirectUri are required for SPA authorization code flow",
+        "CONFIG_INVALID",
+      );
+    }
+
     const verifier = generateRandomString(64);
     const state = generateRandomString(16);
     flowStorage.setItem(storageKeys.pkceVerifier, verifier);
@@ -761,7 +768,7 @@ export function createGossoClient<TProfile = UserProfile>(
     authUrl.searchParams.append("client_id", config.clientId);
     authUrl.searchParams.append("response_type", "code");
     authUrl.searchParams.append("redirect_uri", config.redirectUri);
-    authUrl.searchParams.append("scope", config.scope);
+    authUrl.searchParams.append("scope", config.scope || "openid profile email");
     authUrl.searchParams.append("code_challenge", challenge);
     authUrl.searchParams.append("code_challenge_method", "S256");
     authUrl.searchParams.append("state", state);
@@ -775,6 +782,12 @@ export function createGossoClient<TProfile = UserProfile>(
     code: string,
     state: string,
   ): Promise<AuthenticationResult> => {
+    if (!config.clientId || !config.redirectUri) {
+      throw new AuthenticationError(
+        "clientId and redirectUri are required for SPA token exchange",
+        "CONFIG_INVALID",
+      );
+    }
     const savedState = flowStorage.getItem(storageKeys.authState);
     const verifier = flowStorage.getItem(storageKeys.pkceVerifier);
     if (state !== savedState)
