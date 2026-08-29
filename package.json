@@ -1,6 +1,6 @@
 {
   "name": "@gosso/client",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Browser SDK for Gosso OAuth/OIDC SPA clients.",
   "type": "module",
   "license": "MIT",

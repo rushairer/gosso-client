@@ -199,13 +199,18 @@ export function createGossoClient<TProfile = UserProfile>(
       ? "__Host-csrf_token"
       : "csrf_token";
 
+  const isBffMode = Boolean(config.sessionProfileEndpoint);
   const issuerOrigin = new URL(config.issuer).origin;
   const credentialsFor = (target: URL): RequestCredentials =>
-    cookieSession && target.origin !== window.location.origin
+    cookieSession && !isBffMode && target.origin !== window.location.origin
       ? "include"
       : "same-origin";
   const identityCredentials = credentialsFor(new URL(config.issuer));
-  const allowedApiOrigins = new Set([window.location.origin, issuerOrigin]);
+  const allowedApiOrigins = new Set(
+    isBffMode
+      ? [window.location.origin]
+      : [window.location.origin, issuerOrigin],
+  );
   for (const value of config.allowedApiOrigins || []) {
     const parsed = new URL(value);
     if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") {
@@ -314,6 +319,11 @@ export function createGossoClient<TProfile = UserProfile>(
     observedGeneration: string | null,
   ): Promise<string> => {
     if (currentRefreshGeneration() !== observedGeneration) return "";
+
+    if (isBffMode) {
+      markCookieRefreshComplete();
+      return "";
+    }
 
     const csrf = await ensureIdentityCSRFToken();
     const response = await fetcher(`${config.issuer}/api/v1/auth/refresh`, {
@@ -426,10 +436,12 @@ export function createGossoClient<TProfile = UserProfile>(
       : {};
     if (cookieSession) {
       const [identity, session] = await Promise.all([
-        fetcher(`${config.issuer}/oidc/userinfo`, {
-          headers: sessionHeaders,
-          credentials: identityCredentials,
-        }).catch(() => null),
+        isBffMode
+          ? Promise.resolve(null)
+          : fetcher(`${config.issuer}/oidc/userinfo`, {
+              headers: sessionHeaders,
+              credentials: identityCredentials,
+            }).catch(() => null),
         config.sessionProfileEndpoint
           ? fetcher(config.sessionProfileEndpoint, {
               headers: sessionHeaders,
@@ -768,7 +780,10 @@ export function createGossoClient<TProfile = UserProfile>(
     authUrl.searchParams.append("client_id", config.clientId);
     authUrl.searchParams.append("response_type", "code");
     authUrl.searchParams.append("redirect_uri", config.redirectUri);
-    authUrl.searchParams.append("scope", config.scope || "openid profile email");
+    authUrl.searchParams.append(
+      "scope",
+      config.scope || "openid profile email",
+    );
     authUrl.searchParams.append("code_challenge", challenge);
     authUrl.searchParams.append("code_challenge_method", "S256");
     authUrl.searchParams.append("state", state);

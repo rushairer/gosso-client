@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-08-29
+
+### Fixed
+- Strictly enforce RFC 10017 BFF boundary isolation: in BFF mode (`sessionProfileEndpoint`), the SDK restricts network operations to the local application origin, eliminating cross-origin browser requests to IdP `${config.issuer}/oidc/userinfo` and `${config.issuer}/api/v1/auth/refresh`.
+- Prevent cross-origin credential transmission to IdP issuer when operating behind a same-origin BFF.
+
 ## [0.8.7] - 2026-08-29
 
 ### Added

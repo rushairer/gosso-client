@@ -60,7 +60,24 @@ function createCookieClient(fetchImpl = vi.fn()) {
     postLoginDefaultPath: "/admin",
     loginPath: "/login",
     storagePrefix: "cookie-test",
+    csrfCookieName: "blog_csrf_token",
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+}
+
+function createBffClient(fetchImpl = vi.fn()) {
+  return createGossoClient({
+    issuer: "https://sso.example.test",
+    clientId: "blog-bff",
+    redirectUri: "https://app.example.test/callback",
+    scope: "openid profile email",
+    postLoginDefaultPath: "/admin",
+    loginPath: "/login",
+    storagePrefix: "bff-test",
+    sessionMode: "cookie",
     sessionProfileEndpoint: "/api/me/session",
+    authorizeEndpoint: "/api/auth/login",
+    logoutEndpoint: "/api/auth/logout",
     csrfCookieName: "blog_csrf_token",
     fetchImpl: fetchImpl as unknown as typeof fetch,
   });
@@ -395,15 +412,11 @@ describe("@gosso/client", () => {
       .fn()
       .mockResolvedValueOnce(jsonResponse({ expires_in: 900 }))
       .mockResolvedValueOnce(
-        jsonResponse({ sub: "user-1", preferred_username: "aben" }),
-      )
-      .mockResolvedValueOnce(
         jsonResponse({
-          data: {
-            sub: "user-1",
-            roles: ["admin"],
-            scope: "openid profile admin",
-          },
+          sub: "user-1",
+          preferred_username: "aben",
+          roles: ["admin"],
+          scope: "openid profile email admin",
         }),
       );
     const client = createCookieClient(fetchMock);
@@ -741,14 +754,14 @@ describe("@gosso/client", () => {
   });
 
   it("initializes a cookie session from existing HttpOnly credentials", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse({ sub: "user-1", preferred_username: "aben" }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({ data: { roles: ["admin"], permissions: ["manage"] } }),
-      );
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        sub: "user-1",
+        preferred_username: "aben",
+        roles: ["admin"],
+        permissions: ["manage"],
+      }),
+    );
     const client = createCookieClient(fetchMock);
 
     const snapshot = await client.initializeSession();
@@ -758,7 +771,7 @@ describe("@gosso/client", () => {
       sub: "user-1",
       roles: ["admin"],
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses a cached profile without probing the cookie session", async () => {
@@ -784,12 +797,7 @@ describe("@gosso/client", () => {
       if (url.endsWith("/oidc/userinfo")) {
         return callsForURL === 1
           ? new Response(null, { status: 401 })
-          : jsonResponse({ sub: "restored-user" });
-      }
-      if (url === "/api/me/session") {
-        return callsForURL === 1
-          ? new Response(null, { status: 401 })
-          : jsonResponse({ data: { roles: ["admin"] } });
+          : jsonResponse({ sub: "restored-user", roles: ["admin"] });
       }
       if (url.endsWith("/api/v1/auth/refresh")) {
         return jsonResponse({ expires_in: 900 });
@@ -815,7 +823,7 @@ describe("@gosso/client", () => {
   it("settles as unauthenticated when cookie session refresh is rejected", async () => {
     document.cookie = "__Host-csrf_token=gosso-value; path=/; Secure";
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith("/oidc/userinfo") || url === "/api/me/session") {
+      if (url.endsWith("/oidc/userinfo")) {
         return new Response(null, { status: 401 });
       }
       if (url.endsWith("/api/v1/auth/refresh")) {
@@ -834,8 +842,7 @@ describe("@gosso/client", () => {
   it("coalesces concurrent session initialization", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ sub: "user-1" }))
-      .mockResolvedValueOnce(jsonResponse({ data: { roles: ["admin"] } }));
+      .mockResolvedValueOnce(jsonResponse({ sub: "user-1", roles: ["admin"] }));
     const client = createCookieClient(fetchMock);
 
     const [first, second] = await Promise.all([
@@ -844,7 +851,7 @@ describe("@gosso/client", () => {
     ]);
 
     expect(first).toBe(second);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   describe("Typed Error Hierarchy", () => {
@@ -1028,6 +1035,42 @@ describe("@gosso/client", () => {
       await expect(client.getBlob("/api/error")).rejects.toThrow(
         "Resource not found",
       );
+    });
+
+    it("enforces BFF boundary by not calling issuer userinfo or refresh in BFF mode", async () => {
+      const fetchImpl = vi.fn().mockImplementation((url) => {
+        const path = String(url);
+        if (path === "/api/me/session") {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                sub: "bff-user-1",
+                roles: ["editor"],
+                permissions: ["write:post"],
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ ok: true }));
+      });
+      const client = createBffClient(fetchImpl);
+
+      const profile = await client.fetchUserProfile();
+      expect(profile.sub).toBe("bff-user-1");
+      expect(profile.roles).toEqual(["editor"]);
+
+      // Verify no network call was made to https://sso.example.test/oidc/userinfo
+      const issuerCalls = fetchImpl.mock.calls.filter(([url]) =>
+        String(url).startsWith("https://sso.example.test"),
+      );
+      expect(issuerCalls).toHaveLength(0);
+
+      // Verify refreshAccessToken in BFF mode does not call IdP refresh
+      await client.refreshAccessToken();
+      const refreshCalls = fetchImpl.mock.calls.filter(([url]) =>
+        String(url).includes("/api/v1/auth/refresh"),
+      );
+      expect(refreshCalls).toHaveLength(0);
     });
   });
 });
