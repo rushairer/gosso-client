@@ -125,10 +125,11 @@ export function hasAdminAccess(
   accessToken: string | null,
 ): boolean {
   const hasAdminRole = profile?.roles?.includes("admin") || false;
+  if (!hasAdminRole) return false;
   const scope = accessToken
     ? readScopeFromAccessToken(accessToken)
     : profile?.scope;
-  return hasAdminRole && Boolean(scope?.split(/\s+/).includes("admin"));
+  return scope ? Boolean(scope.split(/\s+/).includes("admin")) : hasAdminRole;
 }
 
 export function parseRefreshLock(raw: string | null): RefreshLock | null {
