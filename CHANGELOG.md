@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-30
+
+### Fixed
+- Refine `hasAdminAccess` to properly check admin role from cookie session profiles when scope is not present in session payload.
+
 ## [0.9.0] - 2026-08-30
 
 ### Changed
