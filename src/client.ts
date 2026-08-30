@@ -200,6 +200,12 @@ export function createGossoClient<TProfile = UserProfile>(
       : "csrf_token";
 
   const isBffMode = Boolean(config.sessionProfileEndpoint);
+  if (isBffMode && !config.sessionRefreshEndpoint) {
+    throw new AuthenticationError(
+      "BFF mode requires a same-origin sessionRefreshEndpoint",
+      "BFF_REFRESH_ENDPOINT_REQUIRED",
+    );
+  }
   const issuerOrigin = new URL(config.issuer).origin;
   const credentialsFor = (target: URL): RequestCredentials =>
     cookieSession && !isBffMode && target.origin !== window.location.origin
@@ -321,6 +327,31 @@ export function createGossoClient<TProfile = UserProfile>(
     if (currentRefreshGeneration() !== observedGeneration) return "";
 
     if (isBffMode) {
+      const refreshTarget = assertAllowedRequest(
+        config.sessionRefreshEndpoint!,
+      );
+      if (refreshTarget.origin !== window.location.origin) {
+        throw new AuthenticationError(
+          "BFF refresh endpoint must be same-origin",
+          "UNTRUSTED_API_ORIGIN",
+        );
+      }
+      const headers = new Headers();
+      const csrf = config.csrfCookieName
+        ? readCookie(config.csrfCookieName)
+        : null;
+      if (csrf) headers.set("X-CSRF-Token", csrf);
+      const response = await fetcher(refreshTarget.toString(), {
+        method: "POST",
+        headers,
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        throw new CookieSessionRefreshError(
+          response.status,
+          "BFF session refresh failed",
+        );
+      }
       markCookieRefreshComplete();
       return "";
     }

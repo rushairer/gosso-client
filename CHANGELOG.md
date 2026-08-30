@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-30
+
+### Changed
+- Require an explicit same-origin `sessionRefreshEndpoint` in BFF mode and use it for Cookie-session refreshes. The SDK never falls back to an issuer token endpoint in BFF mode.
+
 ## [0.8.8] - 2026-08-29
 
 ### Fixed

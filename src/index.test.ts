@@ -76,6 +76,7 @@ function createBffClient(fetchImpl = vi.fn()) {
     storagePrefix: "bff-test",
     sessionMode: "cookie",
     sessionProfileEndpoint: "/api/me/session",
+    sessionRefreshEndpoint: "/api/auth/refresh",
     authorizeEndpoint: "/api/auth/login",
     logoutEndpoint: "/api/auth/logout",
     csrfCookieName: "blog_csrf_token",
@@ -1065,12 +1066,12 @@ describe("@gosso/client", () => {
       );
       expect(issuerCalls).toHaveLength(0);
 
-      // Verify refreshAccessToken in BFF mode does not call IdP refresh
+      // BFF refresh is explicit and remains on the application origin.
       await client.refreshAccessToken();
-      const refreshCalls = fetchImpl.mock.calls.filter(([url]) =>
-        String(url).includes("/api/v1/auth/refresh"),
+      expect(fetchImpl).toHaveBeenCalledWith(
+        "https://app.example.test/api/auth/refresh",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
       );
-      expect(refreshCalls).toHaveLength(0);
     });
   });
 });

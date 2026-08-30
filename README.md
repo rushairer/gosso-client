@@ -25,34 +25,35 @@ npm install @gosso/client
 ## Quick Start
 
 ```ts
-import { createGossoClient } from '@gosso/client';
+import { createGossoClient } from "@gosso/client";
 
 export const gossoClient = createGossoClient({
   issuer: window.location.origin,
-  clientId: 'blog-spa',
+  clientId: "blog-spa",
   redirectUri: `${window.location.origin}/callback`,
-  scope: 'openid profile email',
-  postLoginDefaultPath: '/admin',
-  loginPath: '/login',
-  storagePrefix: 'my-app',
-  sessionProfileEndpoint: '/api/me/session',
-  csrfCookieName: 'blog_csrf_token',
+  scope: "openid profile email",
+  postLoginDefaultPath: "/admin",
+  loginPath: "/login",
+  storagePrefix: "my-app",
+  sessionProfileEndpoint: "/api/me/session",
+  sessionRefreshEndpoint: "/api/auth/refresh",
+  csrfCookieName: "blog_csrf_token",
 });
 ```
 
 Start an OIDC flow:
 
 ```ts
-await gossoClient.redirectToAuthorize('/admin');
+await gossoClient.redirectToAuthorize("/admin");
 ```
 
 Handle the callback route:
 
 ```ts
-const code = new URLSearchParams(location.search).get('code');
-const state = new URLSearchParams(location.search).get('state');
+const code = new URLSearchParams(location.search).get("code");
+const state = new URLSearchParams(location.search).get("state");
 
-if (!code || !state) throw new Error('Missing callback parameters');
+if (!code || !state) throw new Error("Missing callback parameters");
 
 const { redirectTo } = await gossoClient.handleRedirectCallback(code, state);
 location.href = redirectTo;
@@ -61,10 +62,10 @@ location.href = redirectTo;
 Call protected APIs:
 
 ```ts
-const response = await gossoClient.apiFetch('/api/posts', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ title: 'Hello Gosso' }),
+const response = await gossoClient.apiFetch("/api/posts", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ title: "Hello Gosso" }),
 });
 ```
 
@@ -85,7 +86,7 @@ await gossoClient.loginWithPasskey();
 Require fresh MFA before a sensitive operation (Gosso 1.3.0 or newer):
 
 ```ts
-await gossoClient.stepUpMfa(code, 'totp');
+await gossoClient.stepUpMfa(code, "totp");
 ```
 
 ## React Bindings
@@ -94,8 +95,12 @@ React applications can import the optional bindings from the dedicated
 subpath. React remains an optional peer dependency for non-React consumers.
 
 ```tsx
-import { GossoProvider, useIsAuthenticated, useUserProfile } from '@gosso/client/react';
-import { gossoClient } from './auth';
+import {
+  GossoProvider,
+  useIsAuthenticated,
+  useUserProfile,
+} from "@gosso/client/react";
+import { gossoClient } from "./auth";
 
 function App() {
   return (
@@ -124,7 +129,11 @@ default English message:
 <AuthCallback
   onSuccess={(path) => navigate(path)}
   renderError={(message, detail) => (
-    <p>{detail?.code === 'CALLBACK_PARAMS_MISSING' ? 'Invalid callback' : message}</p>
+    <p>
+      {detail?.code === "CALLBACK_PARAMS_MISSING"
+        ? "Invalid callback"
+        : message}
+    </p>
   )}
 />
 ```
@@ -132,7 +141,7 @@ default English message:
 ## Account Settings
 
 ```ts
-await gossoClient.updateProfile('New Display Name');
+await gossoClient.updateProfile("New Display Name");
 await gossoClient.changePassword(currentPassword, newPassword);
 await gossoClient.requestEmailChange(newEmail, password);
 await gossoClient.confirmEmailChange(newEmail, code);
@@ -156,9 +165,10 @@ interface GossoClientConfig {
   postLoginDefaultPath: string;
   loginPath: string;
   storagePrefix: string;
-  sessionMode?: 'token' | 'cookie';
+  sessionMode?: "token" | "cookie";
   allowedApiOrigins?: readonly string[];
   sessionProfileEndpoint?: string;
+  sessionRefreshEndpoint?: string;
   csrfCookieName?: string;
   fetchImpl?: typeof fetch;
   onAuthRequired?: () => void;
@@ -174,7 +184,7 @@ profile, and refresh-coordination state.
 trusted HTTPS origins to `allowedApiOrigins`; credentials are rejected before a
 request is sent to any other origin.
 
-In Cookie Session mode, `csrfCookieName` belongs to the application API only. Gosso identity requests always use `__Host-csrf_token` on HTTPS, or `csrf_token` only for an HTTP development issuer. Cookie lookup is exact and never depends on `document.cookie` order.
+In BFF mode, `sessionProfileEndpoint` and `sessionRefreshEndpoint` must both be exact same-origin application endpoints. The SDK never sends a browser request to the issuer's token, userinfo, refresh, or revoke endpoints. `csrfCookieName` belongs to the application API only.
 
 Gosso's default lifetimes are independent: Access Token 15 minutes, Refresh Token 168 hours, Session 24 hours, and CSRF Cookie 4 hours (capped at 24 hours). A missing CSRF Cookie does not invalidate the Refresh Token: the SDK first performs a safe session GET to recover Gosso's CSRF Cookie, then refreshes and retries the original application request once.
 

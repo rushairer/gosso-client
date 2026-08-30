@@ -14,6 +14,8 @@ export interface GossoClientConfig<TProfile = UserProfile> {
   allowedApiOrigins?: readonly string[];
   /** Same-origin endpoint returning {data:{sub,roles,scope}} for UI authorization. */
   sessionProfileEndpoint?: string;
+  /** Same-origin BFF endpoint that refreshes the server-held OAuth session. */
+  sessionRefreshEndpoint?: string;
   /** Same-origin endpoint to initiate login authorization flow (e.g. BFF "/api/auth/login"). */
   authorizeEndpoint?: string;
   /** Same-origin endpoint to perform session logout (e.g. BFF "/api/auth/logout"). */
