@@ -754,6 +754,21 @@ describe("@gosso/client", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves in-flight OAuth flow state (pkce_verifier, auth_state, post_login_redirect) across clear()", () => {
+    const client = createClient();
+    sessionStorage.setItem("test:auth_state", "inflight-state");
+    sessionStorage.setItem("test:pkce_verifier", "inflight-verifier");
+    sessionStorage.setItem("test:post_login_redirect", "/dashboard");
+    sessionStorage.setItem("test:access_token", "old-token");
+
+    client.clear();
+
+    expect(sessionStorage.getItem("test:access_token")).toBeNull();
+    expect(sessionStorage.getItem("test:auth_state")).toBe("inflight-state");
+    expect(sessionStorage.getItem("test:pkce_verifier")).toBe("inflight-verifier");
+    expect(sessionStorage.getItem("test:post_login_redirect")).toBe("/dashboard");
+  });
+
   it("initializes a cookie session from existing HttpOnly credentials", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({

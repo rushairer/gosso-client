@@ -183,13 +183,21 @@ export function createGossoClient<TProfile = UserProfile>(
   const clear = () => {
     memoryTokenSet = null;
     tokenIssuedAt = 0;
-    // Remove artifacts written by pre-0.4 releases during migration.
-    Object.values(storageKeys).forEach((storageKey) =>
-      localStorage.removeItem(storageKey),
-    );
-    Object.values(storageKeys).forEach((storageKey) =>
-      sessionStorage.removeItem(storageKey),
-    );
+    // Remove credentials and session state without destroying in-flight OAuth flow state
+    const sessionKeys = [
+      storageKeys.accessToken,
+      storageKeys.refreshToken,
+      storageKeys.userProfile,
+      storageKeys.tokenIssuedAt,
+      storageKeys.tokenExpiresIn,
+      storageKeys.refreshLock,
+      storageKeys.refreshGeneration,
+      storageKeys.authRedirectGuard,
+    ];
+    sessionKeys.forEach((storageKey) => {
+      localStorage.removeItem(storageKey);
+      sessionStorage.removeItem(storageKey);
+    });
     deleteCookie("access_token");
     emitSessionChanged();
   };

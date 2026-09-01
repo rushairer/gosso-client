@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
-## [Unreleased]
+## [0.9.2] - 2026-09-01
+
+### Fixed
+- Preserve in-flight OAuth flow state (`auth_state`, `pkce_verifier`, `post_login_redirect`) during unauthenticated `initializeSession` and session credential `clear()`, eliminating `State mismatch` errors when logging in directly to IdP host.
 
 ## [0.9.1] - 2026-08-30
 
