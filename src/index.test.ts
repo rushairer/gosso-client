@@ -765,8 +765,12 @@ describe("@gosso/client", () => {
 
     expect(sessionStorage.getItem("test:access_token")).toBeNull();
     expect(sessionStorage.getItem("test:auth_state")).toBe("inflight-state");
-    expect(sessionStorage.getItem("test:pkce_verifier")).toBe("inflight-verifier");
-    expect(sessionStorage.getItem("test:post_login_redirect")).toBe("/dashboard");
+    expect(sessionStorage.getItem("test:pkce_verifier")).toBe(
+      "inflight-verifier",
+    );
+    expect(sessionStorage.getItem("test:post_login_redirect")).toBe(
+      "/dashboard",
+    );
   });
 
   it("initializes a cookie session from existing HttpOnly credentials", async () => {
