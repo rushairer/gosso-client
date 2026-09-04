@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
+## [0.9.3] - 2026-09-04
+
+### Added
+- Add `stepUpPasskey` method to `createGossoClient` for in-session Sudo Mode Step-Up authentication with Passkeys.
+
 ## [0.9.2] - 2026-09-01
 
 ### Fixed

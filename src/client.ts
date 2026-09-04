@@ -1441,6 +1441,72 @@ export function createGossoClient<TProfile = UserProfile>(
     await parseJsonEnvelope<unknown>(response, "Failed to remove passkey");
   };
 
+  const stepUpPasskey = async (): Promise<{
+    access_token?: string;
+    auth_time: number;
+    amr: string[];
+  }> => {
+    const beginRes = await apiFetch(
+      `${config.issuer}/api/v1/passkey/step-up/begin`,
+      { method: "POST" },
+    );
+    const begin = await parseJsonEnvelope<{
+      options: PublicKeyCredentialRequestOptions;
+      request_id: string;
+    }>(beginRes, "Failed to begin passkey step-up");
+    const options = {
+      ...begin.options,
+      challenge: base64URLToBuffer(
+        begin.options.challenge as unknown as string,
+      ),
+      allowCredentials: (begin.options.allowCredentials || []).map((cred) => ({
+        ...cred,
+        id: base64URLToBuffer(cred.id as unknown as string),
+      })),
+    };
+    const assertion = (await navigator.credentials.get({
+      publicKey: options,
+    })) as PublicKeyCredential | null;
+    if (!assertion?.response)
+      throw new PasskeyError(
+        "Passkey authentication cancelled or failed",
+        "PASSKEY_AUTH_CANCELLED",
+      );
+    const assertionResponse =
+      assertion.response as AuthenticatorAssertionResponse;
+    const completeRes = await apiFetch(
+      `${config.issuer}/api/v1/passkey/step-up/complete`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(cookieSession ? { "X-Gosso-Cookie-Session": "1" } : {}),
+        },
+        body: JSON.stringify({
+          request_id: begin.request_id,
+          id: assertion.id,
+          rawId: bufferToBase64URL(assertion.rawId),
+          type: assertion.type,
+          response: {
+            clientDataJSON: bufferToBase64URL(assertionResponse.clientDataJSON),
+            authenticatorData: bufferToBase64URL(
+              assertionResponse.authenticatorData,
+            ),
+            signature: bufferToBase64URL(assertionResponse.signature),
+            userHandle: assertionResponse.userHandle
+              ? bufferToBase64URL(assertionResponse.userHandle)
+              : null,
+          },
+        }),
+      },
+    );
+    return parseJsonEnvelope<{
+      access_token?: string;
+      auth_time: number;
+      amr: string[];
+    }>(completeRes, "Failed to complete step-up passkey");
+  };
+
   const listSessions = async (): Promise<SessionInfo[]> => {
     const response = await apiFetch(`${config.issuer}/api/v1/auth/sessions`);
     const sessions = await parseJsonEnvelope<SessionInfo[]>(
@@ -1533,6 +1599,7 @@ export function createGossoClient<TProfile = UserProfile>(
     listPasskeys,
     registerPasskey,
     deletePasskey,
+    stepUpPasskey,
     listSessions,
     getCurrentSession,
     revokeSession,
