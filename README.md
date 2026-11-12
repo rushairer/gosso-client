@@ -22,52 +22,52 @@ The package intentionally does not ship styled React UI. Build app-specific page
 npm install @gosso/client
 ```
 
-## Quick Start
+## Choose the correct client mode
+
+### A. Confidential server-side BFF (as used by Gouno Blog)
+
+For a browser app backed by a trusted **server-side OAuth/OIDC client**, configure same-origin BFF endpoints instead of an SPA OAuth callback:
 
 ```ts
 import { createGossoClient } from "@gosso/client";
 
 export const gossoClient = createGossoClient({
-  issuer: window.location.origin,
-  clientId: "blog-spa",
-  redirectUri: `${window.location.origin}/callback`,
-  scope: "openid profile email",
+  issuer: "https://sso.example.com",
+  clientId: "", // provider client secret/id are configured on the BFF server
+  redirectUri: "", // OAuth code callback belongs to the BFF, not the SPA
+  scope: "",
+  storagePrefix: "blog",
+  sessionMode: "cookie",
   postLoginDefaultPath: "/admin",
-  loginPath: "/login",
-  storagePrefix: "my-app",
-  sessionProfileEndpoint: "/api/me/session",
+  sessionProfileEndpoint: "/api/me/blog-session",
   sessionRefreshEndpoint: "/api/auth/refresh",
-  csrfCookieName: "blog_csrf_token",
+  authorizeEndpoint: "/api/auth/login",
+  logoutEndpoint: "/api/auth/logout",
+  csrfCookieName: "__Host-blog-csrf",
 });
 ```
 
-Start an OIDC flow:
+`redirectToAuthorize("/admin")` navigates the browser to the **same-origin** BFF login endpoint. The server generates PKCE/state/nonce, redirects to the IdP, exchanges the authorization code and verifies tokens. The browser only receives an opaque host-only session Cookie; it **never** handles an authorization code or provider access/refresh/ID tokens. See the [Gouno Blog source-verified topology](https://github.com/rushairer/gouno-blog/blob/main/docs/architecture/README.md).
+
+Call API methods with `gossoClient.get/post/put/delete` or `gossoClient.apiFetch`; the session and CSRF configuration remains SDK-owned.
+
+### B. Ordinary OAuth public SPA (not Blog BFF)
+
+For a public SPA client that explicitly uses an OAuth callback in JavaScript, configure a registered `clientId`, `redirectUri` and issuer, and use the SDK's authorization-code/PKCE callback handling. The ordinary SPA should have its own reviewed token-storage, XSS, origin and CSRF threat model; do not copy these settings into the Blog BFF integration.
 
 ```ts
-await gossoClient.redirectToAuthorize("/admin");
-```
-
-Handle the callback route:
-
-```ts
-const code = new URLSearchParams(location.search).get("code");
-const state = new URLSearchParams(location.search).get("state");
-
-if (!code || !state) throw new Error("Missing callback parameters");
-
-const { redirectTo } = await gossoClient.handleRedirectCallback(code, state);
-location.href = redirectTo;
-```
-
-Call protected APIs:
-
-```ts
-const response = await gossoClient.apiFetch("/api/posts", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ title: "Hello Gosso" }),
+const spaClient = createGossoClient({
+  issuer: "https://sso.example.com",
+  clientId: "registered-public-spa-client",
+  redirectUri: window.location.origin + "/callback",
+  scope: "openid profile email",
+  sessionMode: "cookie",
+  storagePrefix: "ordinary-spa",
 });
+await spaClient.redirectToAuthorize("/");
 ```
+
+Use the SDK's callback API/React bindings for this mode and the current package API rather than manually parsing tokens or implementing the protocol yourself.
 
 ## Password, MFA, and Passkey Login
 
